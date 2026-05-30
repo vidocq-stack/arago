@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.1.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd"
-         root="true">
-    <modelVersion>4.1.0</modelVersion>
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.vidocq.tools.arago</groupId>
     <artifactId>arago-parent</artifactId>
@@ -34,11 +33,11 @@
         <developerConnection>scm:git:ssh://git@codeberg.org/VidocqTools/arago.git</developerConnection>
     </scm>
 
-    <subprojects>
-        <subproject>arago-web</subproject>
-        <subproject>arago-reveal-plugin</subproject>
-        <subproject>arago-server</subproject>
-    </subprojects>
+    <modules>
+        <module>arago-web</module>
+        <module>arago-reveal-plugin</module>
+        <module>arago-server</module>
+    </modules>
 
     <!-- SNAPSHOTs Vidocq upstream sont publiés sur le Central Portal Snapshots de Sonatype
          (consommés en anonyme). vauban 0.1.0 est une release Maven Central (repo par défaut). -->
@@ -222,8 +221,6 @@
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-core</artifactId>
                 <version>${flyway.version}</version>
-                <!-- modular-jar : force le module-path côté compiler Maven 4 (cf. arago-server). -->
-                <type>modular-jar</type>
             </dependency>
             <dependency>
                 <groupId>org.flywaydb</groupId>
@@ -265,7 +262,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>4.0.0-beta-4</version>
+                    <version>3.13.0</version>
                     <configuration>
                         <release>25</release>
                     </configuration>

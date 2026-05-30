@@ -30,7 +30,7 @@ Mansart prêt.
 
 ## Prérequis
 
-- **Java 25** + **Maven 4.0.0-rc-5** (pinés via `.sdkmanrc`) : `sdk env`.
+- **Java 25** + **Maven 3.9.16** (pinés via `.sdkmanrc`) : `sdk env`.
 - **Docker** (pour les tests Testcontainers et la stack docker-compose).
 
 ## Build

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.1.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd">
-    <modelVersion>4.1.0</modelVersion>
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>io.vidocq.tools.arago</groupId>
@@ -68,10 +68,9 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-            <!-- Flyway n'a pas d'Automatic-Module-Name : Maven 4 le mettrait sur le class-path,
-                 invisible depuis notre module nommé. `modular-jar` force le module-path (module
-                 automatique `flyway.core`). Même artefact .jar. -->
-            <type>modular-jar</type>
+            <!-- module-info `requires flyway.core` : sous maven-compiler-plugin 3.x, les deps d'un
+                 projet modulaire (module-info présent) vont sur le module-path, les jars sans
+                 module-info devenant des modules automatiques (`flyway.core` ← nom du jar). -->
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>

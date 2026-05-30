@@ -7,7 +7,7 @@ on:
 
 env:
   JAVA_VERSION: '25'
-  MAVEN_VERSION: '4.0.0-rc-5'
+  MAVEN_VERSION: '3.9.16'
 
 jobs:
   build:
@@ -57,7 +57,7 @@ jobs:
       - name: Setup Maven ${{ env.MAVEN_VERSION }}
         run: |
           set -eu
-          curl -fsSL -o /tmp/maven.tgz "https://dlcdn.apache.org/maven/maven-4/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+          curl -fsSL -o /tmp/maven.tgz "https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz"
           mkdir -p $HOME/maven
           tar -xzf /tmp/maven.tgz -C $HOME/maven --strip-components=1
           echo "$HOME/maven/bin" >> $GITHUB_PATH

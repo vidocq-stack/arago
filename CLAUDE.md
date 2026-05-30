@@ -10,8 +10,8 @@ Guidance pour Claude Code dans ce dépôt. Voir aussi `arago-spec.md` (spec comp
   slides reveal, RGPD).
 - groupId : `io.vidocq.tools.arago` — version `0.1.0-SNAPSHOT`.
 - Repo : <https://codeberg.org/VidocqTools/arago> (org `VidocqTools`, sibling de `forge-dashboard`).
-- Application (≠ librairie) : on suit les conventions du workspace applicatif `vidocq-tools`
-  (Model Maven **4.1.0**, Maven **4.0.0-rc-5**, Java **25** Liberica), pas celles des libs upstream.
+- Application (≠ librairie) : Model Maven **4.0.0**, Maven **3.9.16**, Java **25**, aligné sur la
+  convention du workspace Vidocq (le sibling `forge-dashboard` est resté en Maven 4 / Model 4.1.0).
 
 ## Modules
 
@@ -24,7 +24,7 @@ Guidance pour Claude Code dans ce dépôt. Voir aussi `arago-spec.md` (spec comp
 ## Commandes
 
 ```bash
-sdk env                      # Java 25 + Maven 4.0.0-rc-5 (.sdkmanrc)
+sdk env                      # Java 25 + Maven 3.9.16 (.sdkmanrc)
 mvn -ntp install -DskipTests # build complet (front Vite inclus via frontend-maven-plugin)
 mvn -pl arago-server test    # tests (Testcontainers → Docker requis)
 docker compose up --build    # stack locale Arago + PostgreSQL 16
