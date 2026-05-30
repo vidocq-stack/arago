@@ -1,0 +1,117 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '25'
+  MAVEN_VERSION: '4.0.0-rc-5'
+
+jobs:
+  build:
+    runs-on: docker
+    # Le label `docker` mappe par défaut sur `docker:dind` (alpine, sans Node).
+    # On surcharge avec catthehacker/ubuntu:act-22.04 (Node 20 + Docker CLI + bash).
+    # Le build front (frontend-maven-plugin) télécharge son propre Node — rien à installer ici.
+    container:
+      image: catthehacker/ubuntu:act-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Docker daemon (DinD gateway)
+        run: |
+          set -e
+          GW_HEX=$(awk '$2 == "00000000" { print $3; exit }' /proc/net/route 2>/dev/null || true)
+          if [ -n "$GW_HEX" ] && [ "${#GW_HEX}" -ge 8 ]; then
+            GW=$(printf "%d.%d.%d.%d\n" \
+              "0x${GW_HEX:6:2}" \
+              "0x${GW_HEX:4:2}" \
+              "0x${GW_HEX:2:2}" \
+              "0x${GW_HEX:0:2}")
+          else
+            GW=172.17.0.1
+          fi
+          echo "DinD gateway: $GW"
+          if ! timeout 5 bash -c "</dev/tcp/$GW/2375"; then
+            echo "::error::Docker daemon at tcp://$GW:2375 unreachable"
+            exit 1
+          fi
+          echo "DOCKER_HOST=tcp://$GW:2375" >> "$GITHUB_ENV"
+
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: liberica
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache ~/.m2
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: m2-${{ runner.os }}-
+
+      - name: Setup Maven ${{ env.MAVEN_VERSION }}
+        run: |
+          set -eu
+          curl -fsSL -o /tmp/maven.tgz "https://dlcdn.apache.org/maven/maven-4/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+          mkdir -p $HOME/maven
+          tar -xzf /tmp/maven.tgz -C $HOME/maven --strip-components=1
+          echo "$HOME/maven/bin" >> $GITHUB_PATH
+
+      - name: Build (mvn install)
+        run: |
+          set -eu
+          mvn --version
+          # SNAPSHOTs Vidocq consommés en anonyme depuis le Central Portal Snapshots (repo du pom).
+          # -DskipTests : les tests Testcontainers ont besoin d'un Docker dédié (job de test séparé à venir).
+          mvn -ntp -B install -DskipTests
+
+      - name: Login to container registry
+        env:
+          DOCKER_REG_URL: ${{ secrets.DOCKER_REG_URL }}
+          DOCKER_REG_USER: ${{ secrets.DOCKER_REG_USER }}
+          DOCKER_REG_PASSWORD: ${{ secrets.DOCKER_REG_PASSWORD }}
+        run: |
+          set -eu
+          REG=$(printf '%s' "$DOCKER_REG_URL" | tr -d '[:space:]'); REG="${REG#*://}"; REG=$(printf '%s' "$REG" | sed 's#/*$##')
+          echo "$DOCKER_REG_PASSWORD" | docker login "$REG" -u "$DOCKER_REG_USER" --password-stdin
+
+      - name: Build & push Docker image
+        env:
+          DOCKER_REG_URL: ${{ secrets.DOCKER_REG_URL }}
+          REVISION: ${{ github.sha }}
+          CREATED: ${{ github.event.head_commit.timestamp }}
+        run: |
+          set -eu
+          REG=$(printf '%s' "$DOCKER_REG_URL" | tr -d '[:space:]'); REG="${REG#*://}"; REG=$(printf '%s' "$REG" | sed 's#/*$##')
+          IMAGE="${REG}/vidocq-tools/arago"
+          SHORT_SHA=$(echo "${REVISION}" | cut -c1-7)
+          echo "Image cible : ${IMAGE} (sha ${SHORT_SHA})"
+          docker build \
+            --label "org.opencontainers.image.source=https://codeberg.org/VidocqTools/arago" \
+            --label "org.opencontainers.image.revision=${REVISION}" \
+            --label "org.opencontainers.image.created=${CREATED}" \
+            -t "${IMAGE}:0.1.0-SNAPSHOT" \
+            -t "${IMAGE}:main-${SHORT_SHA}" \
+            .
+          docker push "${IMAGE}:0.1.0-SNAPSHOT"
+          docker push "${IMAGE}:main-${SHORT_SHA}"
+
+      - name: Trigger Portainer redeploy
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          set -eu
+          URL=$(printf '%s' "$PORTAINER_WEBHOOK_URL" | tr -d '[:space:]')
+          if [ -z "$URL" ]; then
+            echo "::error::Le secret PORTAINER_WEBHOOK_URL est vide ou absent (Repo Settings -> Actions -> Secrets)."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/r.txt -w '%{http_code}' --retry 3 -X POST "$URL")
+          echo "Portainer webhook -> HTTP $code"
+          cat /tmp/r.txt || true
+          test "$code" = "200" || test "$code" = "204"

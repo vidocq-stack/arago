@@ -1,0 +1,17 @@
+.git
+.idea
+.vscode
+**/*.iml
+.DS_Store
+.sdkmanrc
+CLAUDE.md
+
+# Front sources / node — l'image ne contient que le build déjà empaqueté dans les jars.
+**/node_modules
+arago-web/target/node
+
+# Exclure target/ par défaut, sauf le JAR applicatif et le répertoire des deps.
+**/target/*
+!arago-server/target/dependency
+!arago-server/target/dependency/*
+!arago-server/target/arago-server-*.jar

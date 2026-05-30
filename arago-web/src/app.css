@@ -1,0 +1,29 @@
+/* Palette Empire sépia/bordeaux/crème — figée en Phase 0 (cf. arago-spec §5). */
+:root {
+  --arago-ink:      #1a1410; /* noir sépia */
+  --arago-cream:    #f4ead5; /* fond crème */
+  --arago-paper:    #ece1c4; /* fond papier */
+  --arago-bordeaux: #7A1F2B; /* accent principal */
+  --arago-gold:     #b8860b; /* accent secondaire */
+  --arago-success:  #2f6b3b;
+  --arago-warn:     #c9722b;
+  --arago-danger:   #8b1a1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  color: var(--arago-ink);
+  background:
+    radial-gradient(circle at 50% -10%, var(--arago-paper), var(--arago-cream) 60%);
+}

@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd"
+         root="true">
+    <modelVersion>4.1.0</modelVersion>
+
+    <groupId>io.vidocq.tools.arago</groupId>
+    <artifactId>arago-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>arago</name>
+    <description>Arago — Speaker &amp; Lab Companion. Première application phare bâtie sur la stack Vidocq.</description>
+    <url>https://codeberg.org/VidocqTools/arago</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Yann Blazart</name>
+            <email>yann.blazart@gmail.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://codeberg.org/VidocqTools/arago</url>
+        <connection>scm:git:https://codeberg.org/VidocqTools/arago.git</connection>
+        <developerConnection>scm:git:ssh://git@codeberg.org/VidocqTools/arago.git</developerConnection>
+    </scm>
+
+    <subprojects>
+        <subproject>arago-web</subproject>
+        <subproject>arago-reveal-plugin</subproject>
+        <subproject>arago-server</subproject>
+    </subprojects>
+
+    <!-- SNAPSHOTs Vidocq upstream sont publiés sur le Central Portal Snapshots de Sonatype
+         (consommés en anonyme). vauban 0.1.0 est une release Maven Central (repo par défaut). -->
+    <repositories>
+        <repository>
+            <id>central-snapshots</id>
+            <name>Central Portal Snapshots</name>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+            <releases><enabled>false</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>central-snapshots</id>
+            <name>Central Portal Snapshots</name>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+            <releases><enabled>false</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <!-- Vidocq stack. vauban est épinglé à la release 0.1.0 (Maven Central) ;
+             les autres briques sont stabilisées plus tard, encore en SNAPSHOT. -->
+        <vauban.version>0.1.0</vauban.version>
+        <vidocq.runtime.version>0.1.0-SNAPSHOT</vidocq.runtime.version>
+        <cassini.version>0.1.0-SNAPSHOT</cassini.version>
+        <chappe.version>0.1.0-SNAPSHOT</chappe.version>
+        <champollion.version>0.1.0-SNAPSHOT</champollion.version>
+        <mansart.version>0.1.0-SNAPSHOT</mansart.version>
+
+        <!-- Jakarta / MicroProfile (API uniquement, runtime fourni par Vidocq) -->
+        <jakarta.ws.rs.version>4.0.0</jakarta.ws.rs.version>
+        <jakarta.cdi.version>4.1.0</jakarta.cdi.version>
+        <jakarta.inject.version>2.0.1</jakarta.inject.version>
+        <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
+        <jakarta.json.version>2.1.3</jakarta.json.version>
+        <jakarta.json.bind.version>3.0.1</jakarta.json.bind.version>
+        <jakarta.persistence.version>3.2.0</jakarta.persistence.version>
+        <jakarta.data.version>1.0.1</jakarta.data.version>
+        <jakarta.transaction.version>2.0.1</jakarta.transaction.version>
+
+        <!-- Dépendances hors stack §5 — voir CLAUDE.md (justifications). -->
+        <postgresql.version>42.7.4</postgresql.version>
+        <flyway.version>11.1.0</flyway.version>
+        <yasson.version>3.0.4</yasson.version>
+        <parsson.version>1.1.7</parsson.version>
+
+        <!-- Test -->
+        <junit.version>5.11.4</junit.version>
+        <testcontainers.version>1.20.4</testcontainers.version>
+
+        <!-- Outillage front (build-only) -->
+        <frontend.plugin.version>1.15.1</frontend.plugin.version>
+        <node.version>v22.12.0</node.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- ===== Vidocq runtime + extensions (BOM-équivalent local) ===== -->
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-core</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-cassini-rest-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-ravel-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-knock-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-mansart-pool-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-mansart-data-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-mansart-transactions-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+
+            <!-- Mansart dialecte PostgreSQL -->
+            <dependency>
+                <groupId>io.vidocq.mansart</groupId>
+                <artifactId>mansart-data-dialect-postgresql</artifactId>
+                <version>${mansart.version}</version>
+            </dependency>
+
+            <!-- Chappe transport -->
+            <dependency>
+                <groupId>io.vidocq.chappe</groupId>
+                <artifactId>chappe-api</artifactId>
+                <version>${chappe.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.chappe</groupId>
+                <artifactId>chappe-core</artifactId>
+                <version>${chappe.version}</version>
+            </dependency>
+
+            <!-- Vauban indexer (Class-File API) — scan des beans CDI. -->
+            <dependency>
+                <groupId>io.vidocq.vauban</groupId>
+                <artifactId>vauban-indexer</artifactId>
+                <version>${vauban.version}</version>
+            </dependency>
+
+            <!-- ===== Jakarta specs (compile-time) ===== -->
+            <dependency>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta.ws.rs-api</artifactId>
+                <version>${jakarta.ws.rs.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.enterprise</groupId>
+                <artifactId>jakarta.enterprise.cdi-api</artifactId>
+                <version>${jakarta.cdi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.inject</groupId>
+                <artifactId>jakarta.inject-api</artifactId>
+                <version>${jakarta.inject.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.annotation</groupId>
+                <artifactId>jakarta.annotation-api</artifactId>
+                <version>${jakarta.annotation.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.json</groupId>
+                <artifactId>jakarta.json-api</artifactId>
+                <version>${jakarta.json.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.json.bind</groupId>
+                <artifactId>jakarta.json.bind-api</artifactId>
+                <version>${jakarta.json.bind.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.persistence</groupId>
+                <artifactId>jakarta.persistence-api</artifactId>
+                <version>${jakarta.persistence.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.data</groupId>
+                <artifactId>jakarta.data-api</artifactId>
+                <version>${jakarta.data.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.transaction</groupId>
+                <artifactId>jakarta.transaction-api</artifactId>
+                <version>${jakarta.transaction.version}</version>
+            </dependency>
+
+            <!-- ===== Hors stack §5 (justifié dans CLAUDE.md) ===== -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-core</artifactId>
+                <version>${flyway.version}</version>
+                <!-- modular-jar : force le module-path côté compiler Maven 4 (cf. arago-server). -->
+                <type>modular-jar</type>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-database-postgresql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse</groupId>
+                <artifactId>yasson</artifactId>
+                <version>${yasson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.parsson</groupId>
+                <artifactId>parsson</artifactId>
+                <version>${parsson.version}</version>
+            </dependency>
+
+            <!-- ===== Test ===== -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>4.0.0-beta-4</version>
+                    <configuration>
+                        <release>25</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.5</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>3.5.5</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>3.1.3</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.3</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.6.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>com.github.eirslett</groupId>
+                    <artifactId>frontend-maven-plugin</artifactId>
+                    <version>${frontend.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

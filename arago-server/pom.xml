@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 http://maven.apache.org/xsd/maven-4.1.0.xsd">
+    <modelVersion>4.1.0</modelVersion>
+
+    <parent>
+        <groupId>io.vidocq.tools.arago</groupId>
+        <artifactId>arago-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>arago-server</artifactId>
+    <packaging>jar</packaging>
+    <name>arago :: server</name>
+    <description>Runtime Vidocq : REST Cassini + Mansart Data (PostgreSQL) + Flyway + bootstrap.</description>
+
+    <properties>
+        <vidocq.mainModule>io.vidocq.tools.arago.server</vidocq.mainModule>
+        <vidocq.mainClass>io.vidocq.tools.arago.server.App</vidocq.mainClass>
+    </properties>
+
+    <dependencies>
+        <!-- ===== Runtime Vidocq + extensions ===== -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-cassini-rest-extension</artifactId>
+        </dependency>
+        <!-- MicroProfile Config (opt-in) : lit vidocq.properties via MP ConfigSource. -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-ravel-extension</artifactId>
+        </dependency>
+        <!-- MicroProfile Health (knock) retiré en Phase 0 : son BCE n'est pas aligné avec
+             vauban 0.1.0 (release) → échec au boot. Voir BUG.md ARAGO-003. En attendant,
+             HealthResource fournit un /api/health minimal. -->
+
+        <!-- Mansart pool + Jakarta Data + transactions -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-mansart-pool-extension</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-mansart-data-extension</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-mansart-transactions-extension</artifactId>
+        </dependency>
+        <!-- Dialecte PostgreSQL + driver JDBC (runtime). -->
+        <dependency>
+            <groupId>io.vidocq.mansart</groupId>
+            <artifactId>mansart-data-dialect-postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Migrations Flyway (pas d'extension Vidocq : câblage via FlywayMigrator). -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <!-- Flyway n'a pas d'Automatic-Module-Name : Maven 4 le mettrait sur le class-path,
+                 invisible depuis notre module nommé. `modular-jar` force le module-path (module
+                 automatique `flyway.core`). Même artefact .jar. -->
+            <type>modular-jar</type>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Transport -->
+        <dependency>
+            <groupId>io.vidocq.chappe</groupId>
+            <artifactId>chappe-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.chappe</groupId>
+            <artifactId>chappe-core</artifactId>
+        </dependency>
+
+        <!-- Vauban indexer (scan beans CDI) -->
+        <dependency>
+            <groupId>io.vidocq.vauban</groupId>
+            <artifactId>vauban-indexer</artifactId>
+        </dependency>
+
+        <!-- ===== Jakarta APIs (compile) ===== -->
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.inject</groupId>
+            <artifactId>jakarta.inject-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.data</groupId>
+            <artifactId>jakarta.data-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.transaction</groupId>
+            <artifactId>jakarta.transaction-api</artifactId>
+        </dependency>
+
+        <!-- JSON-B runtime (aligné sur l'exemple officiel ; cible : champollion-jsonb). -->
+        <dependency>
+            <groupId>org.eclipse</groupId>
+            <artifactId>yasson</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Ressources statiques (front Svelte + plugin reveal) empaquetées et servies par Chappe. -->
+        <dependency>
+            <groupId>io.vidocq.tools.arago</groupId>
+            <artifactId>arago-web</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vidocq.tools.arago</groupId>
+            <artifactId>arago-reveal-plugin</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ===== Test ===== -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- Un APT codegen par extension utilisant la génération de code :
+                         core (Vauban indexer), cassini (adapter JAX-RS), mansart data + transactions
+                         (impl de repository). Bundles POM tirant processeurs + artefacts BCE. -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.vidocq.runtime</groupId>
+                            <artifactId>vidocq-runtime-core-codegen</artifactId>
+                            <version>${vidocq.runtime.version}</version>
+                            <type>pom</type>
+                        </path>
+                        <path>
+                            <groupId>io.vidocq.runtime</groupId>
+                            <artifactId>vidocq-runtime-cassini-rest-extension-codegen</artifactId>
+                            <version>${vidocq.runtime.version}</version>
+                            <type>pom</type>
+                        </path>
+                        <path>
+                            <groupId>io.vidocq.runtime</groupId>
+                            <artifactId>vidocq-runtime-mansart-data-extension-codegen</artifactId>
+                            <version>${vidocq.runtime.version}</version>
+                            <type>pom</type>
+                        </path>
+                        <path>
+                            <groupId>io.vidocq.runtime</groupId>
+                            <artifactId>vidocq-runtime-mansart-transactions-extension-codegen</artifactId>
+                            <version>${vidocq.runtime.version}</version>
+                            <type>pom</type>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <!-- Génère les _ClientProxy CDI + META-INF/vauban-beans.list à la compilation. -->
+            <plugin>
+                <groupId>io.vidocq.runtime</groupId>
+                <artifactId>vidocq-runtime-maven-plugin</artifactId>
+                <version>${vidocq.runtime.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate</id>
+                        <goals><goal>generate</goal></goals>
+                        <!-- Pas de <scanDependencies> : comme l'exemple Mansart officiel. Scanner
+                             io.vidocq.* générerait des _ClientProxy dans les packages des modules
+                             dépendants (ex. io.vidocq.mansart.transactions.cdi) → split package
+                             JPMS au boot. Les beans des extensions sont déjà pré-générés / BCE. -->
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Tests sur classpath (pas de module-info de test) : évite le casse-tête patch-module. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                </configuration>
+            </plugin>
+
+            <!-- Copie toutes les deps runtime dans target/dependency/ pour le Dockerfile. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-deps</id>
+                        <phase>package</phase>
+                        <goals><goal>copy-dependencies</goal></goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>io.vidocq.tools.arago.server.App</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

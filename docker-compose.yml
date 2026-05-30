@@ -1,0 +1,46 @@
+# Local dev / demo stack: Arago + PostgreSQL 16.
+#   docker compose up --build
+#
+# Prod (Portainer) pulls the CI-built image from registry.vidocq.dev instead of building
+# locally, and wires PostgreSQL as a managed instance — secrets always via env, never baked
+# into the image. Override POSTGRES_PASSWORD / VIDOCQ_POOL_PASSWORD there.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: arago-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-arago}
+      POSTGRES_USER: ${POSTGRES_USER:-arago}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arago}
+    volumes:
+      - arago-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arago} -d ${POSTGRES_DB:-arago}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  arago:
+    build: .
+    image: registry.vidocq.dev/vidocq-tools/arago:0.1.0-SNAPSHOT
+    container_name: arago
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # MP Config env mapping: vidocq.pool.* <- VIDOCQ_POOL_*
+      VIDOCQ_POOL_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-arago}
+      VIDOCQ_POOL_USERNAME: ${POSTGRES_USER:-arago}
+      VIDOCQ_POOL_PASSWORD: ${POSTGRES_PASSWORD:-arago}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  arago-pgdata:
