@@ -37,6 +37,9 @@ public class SpeakerAdminResource {
     @Inject
     AdminAuthenticator auth;
 
+    @Inject
+    AdminAuditService audit;
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response list(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz) {
@@ -50,7 +53,9 @@ public class SpeakerAdminResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response create(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz, CreateSpeakerRequest request) {
+    public Response create(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+                           @HeaderParam("X-Forwarded-For") String forwardedFor,
+                           CreateSpeakerRequest request) {
         if (auth.authenticate(authz).isEmpty()) {
             return unauthorized();
         }
@@ -65,6 +70,7 @@ public class SpeakerAdminResource {
         Speaker speaker = new Speaker(UUID.randomUUID().toString(), email, role, true,
                 request.displayName(), "superadmin", Instant.now());
         Speaker saved = speakers.save(speaker);
+        audit.record("speaker.create", saved.getId(), forwardedFor);
         return Response.status(Response.Status.CREATED).entity(view(saved)).build();
     }
 
@@ -73,6 +79,7 @@ public class SpeakerAdminResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response update(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+                           @HeaderParam("X-Forwarded-For") String forwardedFor,
                            @PathParam("id") String id, UpdateSpeakerRequest request) {
         if (auth.authenticate(authz).isEmpty()) {
             return unauthorized();
@@ -89,13 +96,17 @@ public class SpeakerAdminResource {
                     speaker.setDisplayName(request.displayName());
                 }
             }
-            return Response.ok(view(speakers.save(speaker))).build();
+            Response ok = Response.ok(view(speakers.save(speaker))).build();
+            audit.record("speaker.update", id, forwardedFor);
+            return ok;
         }).orElseGet(() -> Response.status(Response.Status.NOT_FOUND).build());
     }
 
     @DELETE
     @Path("/{id}")
-    public Response delete(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz, @PathParam("id") String id) {
+    public Response delete(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+                           @HeaderParam("X-Forwarded-For") String forwardedFor,
+                           @PathParam("id") String id) {
         if (auth.authenticate(authz).isEmpty()) {
             return unauthorized();
         }
@@ -103,6 +114,7 @@ public class SpeakerAdminResource {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         speakers.deleteById(id);
+        audit.record("speaker.delete", id, forwardedFor);
         return Response.noContent().build();
     }
 

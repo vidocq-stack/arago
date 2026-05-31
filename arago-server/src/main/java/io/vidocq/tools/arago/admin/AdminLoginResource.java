@@ -2,7 +2,9 @@ package io.vidocq.tools.arago.admin;
 
 import io.vidocq.tools.arago.auth.SuperadminAuth;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -26,13 +28,17 @@ import org.eclipse.microprofile.config.ConfigProvider;
 @Path("/admin")
 public class AdminLoginResource {
 
+    @Inject
+    AdminAuditService audit;
+
     private volatile SuperadminAuth auth;
 
     @POST
     @Path("/login")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response login(LoginRequest request) {
+    public Response login(LoginRequest request,
+                          @HeaderParam("X-Forwarded-For") String forwardedFor) {
         SuperadminAuth a = auth();
         if (!a.enabled()) {
             // No hash/secret configured: feature off, no implicit credentials (spec §4.8/§10.2).
@@ -41,7 +47,10 @@ public class AdminLoginResource {
         String user = request == null ? null : request.username();
         String pass = request == null ? null : request.password();
         return a.login(user, pass)
-                .map(token -> Response.ok(new LoginResponse(token)).build())
+                .map(token -> {
+                    audit.record("admin.login", user, forwardedFor);
+                    return Response.ok(new LoginResponse(token)).build();
+                })
                 .orElseGet(() -> Response.status(Response.Status.UNAUTHORIZED).build());
     }
 

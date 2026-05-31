@@ -94,6 +94,12 @@ public class RestSteps {
         assertEquals(expected, json().getInt(field));
     }
 
+    @Then("the response body contains {string}")
+    public void the_response_body_contains(String needle) {
+        assertTrue(response.body().contains(needle),
+                () -> "expected body to contain '" + needle + "' but was: " + response.body());
+    }
+
     @Then("the JSON field {string} is present")
     public void the_json_field_is_present(String field) {
         JsonObject o = json();
