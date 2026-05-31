@@ -1,5 +1,6 @@
 package io.vidocq.tools.arago.acceptance;
 
+import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import jakarta.json.Json;
@@ -24,22 +25,58 @@ public class RestSteps {
 
     private final HttpClient http = HttpClient.newHttpClient();
     private HttpResponse<String> response;
+    private String bearer; // scenario-local superadmin token, attached to requests once logged in
 
-    @When("I GET {string}")
-    public void i_get(String path) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path))
-                .timeout(Duration.ofSeconds(5)).GET().build();
-        response = http.send(req, HttpResponse.BodyHandlers.ofString());
-    }
-
-    @When("I POST {string} with body:")
-    public void i_post_with_body(String path, String body) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path))
+    @Given("I am logged in as superadmin")
+    public void i_am_logged_in_as_superadmin() throws Exception {
+        String body = "{\"username\":\"" + AragoApp.SUPERADMIN_USER
+                + "\",\"password\":\"" + AragoApp.SUPERADMIN_PASSWORD + "\"}";
+        HttpRequest req = HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + "/api/admin/login"))
                 .timeout(Duration.ofSeconds(5))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
+        HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, r.statusCode(), () -> "login failed: " + r.body());
+        try (JsonReader reader = Json.createReader(new StringReader(r.body()))) {
+            bearer = reader.readObject().getString("token");
+        }
+    }
+
+    @When("I GET {string}")
+    public void i_get(String path) throws Exception {
+        response = http.send(authed(request(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @When("I POST {string} with body:")
+    public void i_post_with_body(String path, String body) throws Exception {
+        HttpRequest req = authed(request(path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @When("I PATCH {string} with body:")
+    public void i_patch_with_body(String path, String body) throws Exception {
+        HttpRequest req = authed(request(path))
+                .header("Content-Type", "application/json")
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        response = http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @When("I DELETE {string}")
+    public void i_delete(String path) throws Exception {
+        response = http.send(authed(request(path)).DELETE().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpRequest.Builder request(String path) {
+        return HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path)).timeout(Duration.ofSeconds(5));
+    }
+
+    private HttpRequest.Builder authed(HttpRequest.Builder b) {
+        return bearer == null ? b : b.header("Authorization", "Bearer " + bearer);
     }
 
     @Then("the response status is {int}")
