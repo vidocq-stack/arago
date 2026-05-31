@@ -39,6 +39,17 @@
         <module>arago-server</module>
     </modules>
 
+    <!-- Acceptance tests (Cucumber + Testcontainers + Playwright) are heavy (Docker, browser)
+         and kept OUT of the fast reactor — built only with `-Pacceptance` (cf. arago-spec §16). -->
+    <profiles>
+        <profile>
+            <id>acceptance</id>
+            <modules>
+                <module>arago-acceptance</module>
+            </modules>
+        </profile>
+    </profiles>
+
     <!-- SNAPSHOTs Vidocq upstream sont publiés sur le Central Portal Snapshots de Sonatype
          (consommés en anonyme). vauban 0.1.0 est une release Maven Central (repo par défaut). -->
     <repositories>
