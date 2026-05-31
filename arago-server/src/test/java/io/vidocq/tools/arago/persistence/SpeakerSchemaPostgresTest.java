@@ -59,15 +59,15 @@ class SpeakerSchemaPostgresTest {
     @Test
     void migration_creates_speakers_table_and_row_roundtrips() throws Exception {
         try (Connection c = migratedConnection()) {
-            insertSpeaker(c, "s1", "ada@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
+            insertSpeaker(c, "s1", "ada@example.com", Role.SPEAKER, true);
 
             try (Statement s = c.createStatement();
                  ResultSet rs = s.executeQuery(
-                         "SELECT email, role, status, oidc_sub FROM speakers WHERE id = 's1'")) {
+                         "SELECT email, role, enabled, oidc_sub FROM speakers WHERE id = 's1'")) {
                 assertTrue(rs.next());
                 assertEquals("ada@example.com", rs.getString("email"));
                 assertEquals("SPEAKER", rs.getString("role"));
-                assertEquals("ACTIVE", rs.getString("status"));
+                assertTrue(rs.getBoolean("enabled"));
                 rs.getString("oidc_sub");
                 assertTrue(rs.wasNull(), "oidc_sub starts NULL until first login");
             }
@@ -77,9 +77,9 @@ class SpeakerSchemaPostgresTest {
     @Test
     void email_is_unique() throws Exception {
         try (Connection c = migratedConnection()) {
-            insertSpeaker(c, "s1", "dup@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
+            insertSpeaker(c, "s1", "dup@example.com", Role.SPEAKER, true);
             assertThrows(Exception.class,
-                    () -> insertSpeaker(c, "s2", "dup@example.com", Role.ADMIN, SpeakerStatus.ACTIVE));
+                    () -> insertSpeaker(c, "s2", "dup@example.com", Role.ADMIN, true));
         }
     }
 
@@ -87,16 +87,16 @@ class SpeakerSchemaPostgresTest {
     void multiple_speakers_may_have_null_oidc_sub() throws Exception {
         try (Connection c = migratedConnection()) {
             // Two not-yet-logged-in speakers both have NULL oidc_sub — must be allowed.
-            insertSpeaker(c, "s1", "a@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
-            insertSpeaker(c, "s2", "b@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
+            insertSpeaker(c, "s1", "a@example.com", Role.SPEAKER, true);
+            insertSpeaker(c, "s2", "b@example.com", Role.SPEAKER, true);
         }
     }
 
     @Test
     void oidc_sub_is_unique_once_set() throws Exception {
         try (Connection c = migratedConnection()) {
-            insertSpeaker(c, "s1", "a@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
-            insertSpeaker(c, "s2", "b@example.com", Role.SPEAKER, SpeakerStatus.ACTIVE);
+            insertSpeaker(c, "s1", "a@example.com", Role.SPEAKER, true);
+            insertSpeaker(c, "s2", "b@example.com", Role.SPEAKER, true);
             bindSub(c, "s1", "kc-sub-1");
             assertThrows(Exception.class, () -> bindSub(c, "s2", "kc-sub-1"));
         }
@@ -124,15 +124,15 @@ class SpeakerSchemaPostgresTest {
         }
     }
 
-    private static void insertSpeaker(Connection c, String id, String email, Role role, SpeakerStatus status)
+    private static void insertSpeaker(Connection c, String id, String email, Role role, boolean enabled)
             throws Exception {
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO speakers (id, email, role, status, invited_by, invited_at) "
+                "INSERT INTO speakers (id, email, role, enabled, invited_by, invited_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, id);
             ps.setString(2, email);
             ps.setString(3, role.name());
-            ps.setString(4, status.name());
+            ps.setBoolean(4, enabled);
             ps.setString(5, "superadmin");
             ps.setObject(6, Instant.now().atOffset(ZoneOffset.UTC));
             ps.executeUpdate();

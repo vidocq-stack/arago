@@ -36,10 +36,9 @@ public class Speaker {
     @Column(nullable = false)
     private Role role;
 
-    /** {@code DISABLED} cuts access at the next token check without deleting history. */
-    @Enumerated(EnumType.STRING)
+    /** {@code false} cuts access at the next token check without deleting history. */
     @Column(nullable = false)
-    private SpeakerStatus status;
+    private boolean enabled;
 
     @Column(name = "display_name")
     private String displayName;
@@ -59,12 +58,12 @@ public class Speaker {
 
     public Speaker() {}
 
-    public Speaker(String id, String email, Role role, SpeakerStatus status, String displayName,
+    public Speaker(String id, String email, Role role, boolean enabled, String displayName,
                    String invitedBy, Instant invitedAt) {
         this.id          = id;
         this.email       = email;
         this.role        = role;
-        this.status      = status;
+        this.enabled     = enabled;
         this.displayName = displayName;
         this.invitedBy   = invitedBy;
         this.invitedAt   = invitedAt;
@@ -76,12 +75,10 @@ public class Speaker {
     public void    setEmail(String email)           { this.email = email;    }
     public String  getOidcSub()                     { return oidcSub;        }
     public void    setOidcSub(String oidcSub)       { this.oidcSub = oidcSub; }
-    public Role          getRole()                  { return role;           }
-    public void          setRole(Role role)         { this.role = role;      }
-    public SpeakerStatus getStatus()                { return status;         }
-    public void          setStatus(SpeakerStatus s) { this.status = s;       }
-    /** Convenience: {@code true} iff {@link #getStatus()} is {@link SpeakerStatus#ACTIVE}. */
-    public boolean       isEnabled()                { return status == SpeakerStatus.ACTIVE; }
+    public Role    getRole()                        { return role;           }
+    public void    setRole(Role role)               { this.role = role;      }
+    public boolean isEnabled()                      { return enabled;        }
+    public void    setEnabled(boolean enabled)      { this.enabled = enabled; }
     public String  getDisplayName()                 { return displayName;    }
     public void    setDisplayName(String name)      { this.displayName = name; }
     public String  getInvitedBy()                   { return invitedBy;      }

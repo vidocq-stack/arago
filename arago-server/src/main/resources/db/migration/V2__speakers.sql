@@ -8,7 +8,7 @@ CREATE TABLE speakers (
     email          VARCHAR(320) NOT NULL,
     oidc_sub       VARCHAR(255),
     role           VARCHAR(16)  NOT NULL,
-    status         VARCHAR(16)  NOT NULL,
+    enabled        BOOLEAN      NOT NULL,
     display_name   VARCHAR(200),
     invited_by     VARCHAR(64)  NOT NULL,
     invited_at     TIMESTAMPTZ  NOT NULL,
