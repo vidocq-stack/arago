@@ -16,6 +16,8 @@ module io.vidocq.tools.arago.server {
     requires jakarta.annotation;
     requires jakarta.ws.rs;
     requires jakarta.json.bind;
+    // JSON-P (champollion) — used to build/parse Arago-signed HS256 JWT payloads (io.vidocq.tools.arago.auth).
+    requires jakarta.json;
     requires jakarta.persistence;
     requires jakarta.data;
     requires jakarta.transaction;
