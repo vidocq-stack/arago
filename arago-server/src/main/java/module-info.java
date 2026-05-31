@@ -31,6 +31,8 @@ module io.vidocq.tools.arago.server {
     requires io.vidocq.runtime.ext.mansart.data;
     requires io.vidocq.runtime.ext.mansart.transactions;
     requires io.vidocq.runtime.ext.ravel;
+    // MP Config API — @ConfigProperty injection of superadmin/attendee settings (resolved by ravel).
+    requires org.eclipse.microprofile.config;
     requires io.vidocq.runtime.ext.knock;
 
     requires io.vidocq.chappe.api;
@@ -44,6 +46,7 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.server;
     opens io.vidocq.tools.arago.persistence;
     opens io.vidocq.tools.arago.rest;
+    opens io.vidocq.tools.arago.admin;
 
     // Flyway (automatic module) scans the classpath for migrations; resources in a named module's
     // packages are encapsulated, so open the migration "package" to make them discoverable.

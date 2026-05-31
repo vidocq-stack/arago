@@ -1,6 +1,7 @@
 package io.vidocq.tools.arago.acceptance;
 
 import io.vidocq.runtime.core.VidocqBootstrap;
+import io.vidocq.tools.arago.auth.PasswordHasher;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.net.ServerSocket;
@@ -21,6 +22,11 @@ import java.time.Duration;
  * migrations run at boot, so the container starts with the full schema.</p>
  */
 public final class AragoApp {
+
+    /** Superadmin test credentials injected at boot (referenced verbatim by admin.feature). */
+    public static final String SUPERADMIN_USER = "root";
+    public static final String SUPERADMIN_PASSWORD = "correct-horse-battery";
+    private static final String HMAC_SECRET = "0123456789abcdef0123456789abcdef"; // 32 bytes
 
     private static PostgreSQLContainer<?> postgres;
     private static VidocqBootstrap runtime;
@@ -45,6 +51,14 @@ public final class AragoApp {
         System.setProperty("vidocq.pool.username", postgres.getUsername());
         System.setProperty("vidocq.pool.password", postgres.getPassword());
         System.setProperty("vidocq.chappe.listener.default.port", String.valueOf(port));
+
+        // Superadmin break-glass account (spec §4.8): credentials only via config — here as system
+        // properties (ordinal 400, override vidocq.properties). The hash is computed from the known
+        // test password so admin.feature can log in.
+        System.setProperty("arago.superadmin.username", SUPERADMIN_USER);
+        System.setProperty("arago.superadmin.password-hash",
+                new PasswordHasher().hash(SUPERADMIN_PASSWORD.toCharArray()));
+        System.setProperty("arago.attendee.hmac-secret", HMAC_SECRET);
 
         runtime = VidocqBootstrap.create().configure().start();
         awaitHealthy(baseUrl);

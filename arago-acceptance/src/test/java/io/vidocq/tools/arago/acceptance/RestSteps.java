@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * REST step definitions: issue plain HTTP requests against the running Arago instance and assert on
@@ -31,6 +32,16 @@ public class RestSteps {
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
+    @When("I POST {string} with body:")
+    public void i_post_with_body(String path, String body) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path))
+                .timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        response = http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
     @Then("the response status is {int}")
     public void the_response_status_is(int expected) {
         assertEquals(expected, response.statusCode(), () -> "body: " + response.body());
@@ -44,6 +55,13 @@ public class RestSteps {
     @Then("the JSON field {string} is {int}")
     public void the_json_field_is_int(String field, int expected) {
         assertEquals(expected, json().getInt(field));
+    }
+
+    @Then("the JSON field {string} is present")
+    public void the_json_field_is_present(String field) {
+        JsonObject o = json();
+        assertTrue(o.containsKey(field) && !o.getString(field, "").isBlank(),
+                () -> "missing/empty field '" + field + "' in: " + response.body());
     }
 
     private JsonObject json() {
