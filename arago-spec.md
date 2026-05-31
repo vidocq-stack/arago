@@ -759,3 +759,50 @@ Tu vas implémenter Arago par phases (cf. §11). Pour chaque phase :
 8. Le README de la racine doit toujours rester à jour : comment lancer en dev, comment lancer la démo, screenshots.
 
 Bonne route.
+
+---
+
+## 16. Module de tests d'acceptation (Cucumber + Testcontainers + Playwright)
+
+> **Intention (à mettre en place tôt)** : en plus des tests unitaires (`arago-server/src/test`) et
+> des tests de schéma Testcontainers déjà présents, Arago doit avoir un **module de tests
+> d'acceptation BDD** bout-en-bout, qui pilote l'application **packagée** comme une boîte noire.
+
+### Forme
+
+- **Module Maven dédié** `arago-acceptance` (ou `arago-it`), **hors du cycle unitaire** : lourd
+  (Docker requis), donc isolé derrière un profil Maven (`-Pacceptance`) et **exclu du `<modules>` du
+  build rapide** — même logique que les TCK runners hors-reactor de l'écosystème Vidocq.
+- **Cucumber** (Gherkin, `.feature`) pour décrire les scénarios en langage métier (FR ou EN — à
+  fixer ; FR cohérent avec le public conf/lab francophone, EN cohérent avec « artefacts en anglais »).
+- **Testcontainers** pour faire tourner la stack réelle : **PostgreSQL 16** + l'**image Docker
+  d'Arago** elle-même (réutiliser le `Dockerfile`/`docker-compose.yml`), de sorte que les scénarios
+  s'exécutent contre le binaire de prod, pas un faux serveur. (Plus tard : Keycloak Testcontainers
+  pour les parcours OIDC, en test d'intégration opt-in.)
+- **Playwright (Java)** pour les parcours **front** : navigateur headless qui charge la SPA Svelte
+  servie par Chappe, vérifie le rendu et les interactions (join par PIN, chat, plan de salle…).
+- Les vérifications **REST/WebSocket** pures (santé, endpoints JSON, hub WS) passent par un client
+  HTTP/WS léger dans les steps, sans navigateur.
+
+### Premiers scénarios (= ce qui existe déjà aujourd'hui)
+
+À écrire en premier, pour ancrer le harnais sur l'acquis (Phase 0 + I1 en cours) :
+
+1. **Santé** : `GET /health`, `/health/live`, `/health/ready`, `/health/started` → `200` + statut `UP`.
+2. **Compteur de rooms** : `GET /api/rooms/count` → `200` + JSON `{total, active}` (base vide → `0/0`).
+3. **SPA chargée** (Playwright) : `GET /` rend la page Svelte (titre Arago présent, pas de 404 sur
+   les assets), et `/privacy` est servie.
+4. **Front ↔ back** : la SPA appelle `/api/rooms/count` et affiche le nombre (smoke d'intégration UI).
+
+Puis, au fil de **I1** (socle auth), on ajoute : login superadmin (`POST /api/admin/login`),
+provisioning d'un speaker via la console `/admin`, refus OIDC d'un email non-allowlisté (`403`).
+Chaque phase suivante (room, chat, LAB, reveal, RGPD) **étend** le jeu de `.feature` — les critères
+d'acceptation v1 (§12) deviennent autant de scénarios exécutables.
+
+### Notes
+
+- Ce module **remplace/anticipe** la ligne « Tests E2E (Playwright) » jadis cantonnée à la Phase 6
+  (§11) : on **sème le harnais dès maintenant** et il grossit phase après phase, plutôt que tout à
+  la fin.
+- Reste **stack-pur** : Cucumber/Testcontainers/Playwright sont des dépendances **de test
+  uniquement** (`<scope>test</scope>`), donc compatibles avec la règle zéro-dép runtime (§15.3).
