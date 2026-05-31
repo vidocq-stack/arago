@@ -30,7 +30,7 @@ Le nom **Arago** fait référence à François Arago (conférencier scientifique
 
 > **Pas de compte attendee, pas de mot de passe attendee.** L'authentification attendee = (PIN de la room) + (pseudo choisi à la volée). Ça doit rester aussi simple qu'un Kahoot.
 
-> **Un seul compte à mot de passe dans Arago : le superadmin.** C'est un compte *break-glass* / bootstrap : il existe pour amorcer le système (créer les premiers speakers) **avant** que quiconque ait pu se loguer via OIDC, et pour les opérations d'exploitation. Ses identifiants ne vivent **que** dans les env vars (login + hash Argon2id), jamais en base, jamais dans l'image. Les speakers, eux, n'ont **jamais** de mot de passe local : authN par Keycloak, authZ par l'allowlist Arago.
+> **Un seul compte à mot de passe dans Arago : le superadmin.** C'est un compte *break-glass* / bootstrap : il existe pour amorcer le système (créer les premiers speakers) **avant** que quiconque ait pu se loguer via OIDC, et pour les opérations d'exploitation. Ses identifiants ne vivent **que** dans les env vars (login + hash PBKDF2-HMAC-SHA256), jamais en base, jamais dans l'image. Les speakers, eux, n'ont **jamais** de mot de passe local : authN par Keycloak, authZ par l'allowlist Arago.
 
 ---
 
@@ -73,7 +73,7 @@ Une room est créée dans l'un des modes ci-dessous (modifiable par le speaker t
 
 ### 4.2 Authentification
 
-- **Superadmin** : compte technique **local**, **hors OIDC**. Login via `POST /api/admin/login` (body `{username, password}`), comparé en *constant-time* au couple `ARAGO_SUPERADMIN_USER` / `ARAGO_SUPERADMIN_PASSWORD_HASH` (hash **Argon2id**, cf. §5/§14). En cas de succès, Arago émet un **JWT signé par Arago** (HS256, même clé/mécanisme que les JWT attendee mais claim `role=superadmin`, `aud=arago-admin`, TTL court ≈ 30 min, non renouvelable silencieusement). Aucune session serveur. Détail des capacités et de la gestion des speakers : §4.8. **Ce flux ne dépend pas de Keycloak** (bootstrap possible Keycloak éteint).
+- **Superadmin** : compte technique **local**, **hors OIDC**. Login via `POST /api/admin/login` (body `{username, password}`), comparé en *constant-time* au couple `ARAGO_SUPERADMIN_USER` / `ARAGO_SUPERADMIN_PASSWORD_HASH` (hash **PBKDF2-HMAC-SHA256**, cf. §5/§14). En cas de succès, Arago émet un **JWT signé par Arago** (HS256, même clé/mécanisme que les JWT attendee mais claim `role=superadmin`, `aud=arago-admin`, TTL court ≈ 30 min, non renouvelable silencieusement). Aucune session serveur. Détail des capacités et de la gestion des speakers : §4.8. **Ce flux ne dépend pas de Keycloak** (bootstrap possible Keycloak éteint).
 - **Speakers** : OIDC sur **Keycloak** (`https://keycloak.vidocq.dev`, realm `arago`) **+ allowlist Arago**.
   - Client backend `arago-backend` (confidential, client credentials + token validation MP-JWT).
   - Client front `arago-web` (public, **Authorization Code + PKCE**, redirect URIs whitelistées sur `https://arago.vidocq.dev/*`).
@@ -233,9 +233,9 @@ Le **superadmin** est le seul compte à mot de passe d'Arago. Il sert à **amorc
 
 #### Bootstrap & identifiants
 
-- Identifiants **uniquement** en env vars : `ARAGO_SUPERADMIN_USER` + `ARAGO_SUPERADMIN_PASSWORD_HASH` (Argon2id). Jamais en base, jamais dans l'image, jamais loggués.
+- Identifiants **uniquement** en env vars : `ARAGO_SUPERADMIN_USER` + `ARAGO_SUPERADMIN_PASSWORD_HASH` (PBKDF2-HMAC-SHA256). Jamais en base, jamais dans l'image, jamais loggués.
 - Aucune valeur par défaut : si `ARAGO_SUPERADMIN_PASSWORD_HASH` est absent au démarrage, l'endpoint `/api/admin/login` est **désactivé** (log `WARN` une fois, sans détail). Pas de mot de passe « admin/admin » implicite.
-- Rotation = redéployer avec un nouveau hash. Outil fourni : `arago hash-password` (petite CLI / goal Maven) pour générer un hash Argon2id sans exposer le clair (jamais d'écho du mot de passe).
+- Rotation = redéployer avec un nouveau hash. Outil fourni : `arago hash-password` (petite CLI / goal Maven) pour générer un hash PBKDF2-HMAC-SHA256 sans exposer le clair (jamais d'écho du mot de passe).
 - Un **seul** superadmin (pas de multi-compte). Pour plusieurs opérateurs : ils partagent le secret, ou (phase ultérieure) on promeut des `ADMIN` speakers.
 
 #### Capacités (god-mode = superset du rôle `ADMIN`)
@@ -273,7 +273,7 @@ Le **superadmin** est le seul compte à mot de passe d'Arago. Il sert à **amorc
 - **MicroProfile Config** pour la conf externalisée
 - **MicroProfile Health / Metrics** : `/health`, `/metrics`
 - **SLF4J** via `slf4j-jdk-platform-logging`
-- **Hachage de mot de passe superadmin** : **Argon2id**. Le JDK n'embarque pas Argon2 → c'est la **seule dépendance applicative hors stack §5 à justifier** (cf. §15.3) : préférer une lib légère pur-Java sans natif (ex. *Password4j* ou *BouncyCastle*). Repli **zéro-dépendance** acceptable si on ne veut pas l'ajouter : `PBKDF2WithHmacSHA256` (≥ 600k itérations, sel 16 o), 100 % JDK — la spec reste « Argon2id recommandé, PBKDF2-JDK toléré ». Le format du `…_PASSWORD_HASH` (PHC string) encode l'algo, donc interchangeable sans changer la config.
+- **Hachage de mot de passe superadmin** : **PBKDF2-HMAC-SHA256** (`PBKDF2WithHmacSHA256`, ≥ 600k itérations, sel aléatoire 16 o), **100 % JDK, zéro dépendance** — décision arrêtée 2026-05-31, alignée sur le zéro-dép de la stack (le JDK n'embarque pas Argon2). Le `…_PASSWORD_HASH` est une chaîne **auto-décrivante** (façon PHC : `$pbkdf2-sha256$i=<iter>$<saltB64>$<hashB64>`), donc on pourra basculer vers **Argon2id** plus tard (lib pur-Java à justifier §15.3) sans changer ni le nom de la variable ni le contrat de config.
 
 ### Frontend
 - **Svelte 5** (avec runes), build Vite, sortie statique servie par Chappe
@@ -608,7 +608,7 @@ WebSocket : `wss://.../ws/rooms/{pin}` avec `Authorization` (Bearer JWT speaker 
 
 ### 10.2 Spécifique superadmin
 
-- **Identifiants jamais en base ni dans l'image** : uniquement `ARAGO_SUPERADMIN_USER` + `ARAGO_SUPERADMIN_PASSWORD_HASH` (Argon2id, format PHC). Le mot de passe en clair n'existe nulle part côté serveur ; comparaison **constant-time**.
+- **Identifiants jamais en base ni dans l'image** : uniquement `ARAGO_SUPERADMIN_USER` + `ARAGO_SUPERADMIN_PASSWORD_HASH` (PBKDF2-HMAC-SHA256, format auto-décrivant). Le mot de passe en clair n'existe nulle part côté serveur ; comparaison **constant-time**.
 - **Pas de défaut** : sans hash configuré, `/api/admin/login` renvoie `503`/désactivé (jamais de compte `admin/admin` implicite).
 - **Anti-bruteforce** : 5/min/IP, lockout exponentiel après 5 échecs consécutifs, réponse uniforme (pas de distinction user/mot de passe).
 - **Audit** : toute action superadmin journalisée (`AdminAudit`) ; ni secret, ni mot de passe, ni email attendee dans l'audit ou les logs.
@@ -630,7 +630,7 @@ WebSocket : `wss://.../ws/rooms/{pin}` avec `Authorization` (Bearer JWT speaker 
 - CI Forgejo build vert, image Docker publiée sur Reposilite
 
 ### Phase 1 — Room + chat + email opt-in (2 sprints)
-- **Bootstrap superadmin** : login local `POST /api/admin/login` (Argon2id, env vars), JWT `role=superadmin`, rate-limit + audit ; console `/admin` minimale ; CLI `arago hash-password`
+- **Bootstrap superadmin** : login local `POST /api/admin/login` (PBKDF2-HMAC-SHA256, env vars), JWT `role=superadmin`, rate-limit + audit ; console `/admin` minimale ; CLI `arago hash-password`
 - **Allowlist speakers** : entité `Speaker` + `SpeakerRepository`, CRUD superadmin (`/api/admin/speakers`), invitation par email
 - OIDC Keycloak speaker (realm `arago`) **+ enforcement allowlist** (403 `speaker_not_provisioned` si email absent ; liaison `sub`↔`Speaker` au 1er login)
 - Création room (état `DRAFT`), génération PIN unique, QR code SVG
@@ -720,7 +720,7 @@ Toutes ces valeurs sont fournies par env vars (ou `application.properties` en de
 |-----|---------|-------------|
 | `arago.public.url` | `https://arago.vidocq.dev` | URL publique, utilisée pour QR codes et redirect OIDC |
 | `arago.superadmin.username` (`ARAGO_SUPERADMIN_USER`) | `root` | login du compte technique racine (break-glass) |
-| `arago.superadmin.password-hash` (`ARAGO_SUPERADMIN_PASSWORD_HASH`) | `$argon2id$v=19$m=65536,t=3,p=4$…` | **hash** Argon2id (format PHC) du mot de passe superadmin ; **jamais** le clair. Absent → `/api/admin/login` désactivé |
+| `arago.superadmin.password-hash` (`ARAGO_SUPERADMIN_PASSWORD_HASH`) | `$pbkdf2-sha256$i=600000$<saltB64>$<hashB64>` | **hash** PBKDF2-HMAC-SHA256 (format auto-décrivant) du mot de passe superadmin ; **jamais** le clair. Absent → `/api/admin/login` désactivé |
 | `arago.superadmin.token-ttl-minutes` | `30` | durée de validité du JWT superadmin |
 | `arago.db.url` | `jdbc:postgresql://pg:5432/arago` | JDBC URL PostgreSQL |
 | `arago.db.user` / `arago.db.password` | secret | credentials PG |

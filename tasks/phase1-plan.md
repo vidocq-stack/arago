@@ -1,0 +1,81 @@
+# Arago — Plan Phase 1
+
+> Phase 1 (spec §11) = Room + chat + email opt-in, ~2 sprints. On la découpe en **4 incréments
+> livrables** (chacun = binaire qui boote vert + tests). On attaque par le **socle auth** (I1),
+> puis le cœur démo (I2 room, I3 chat/WS), puis le RGPD (I4).
+>
+> TDD obligatoire (rouge → vert → refactor). Commits atomiques, conventional commits, en anglais.
+> Pas de dépendance hors stack §5 sans justification (Argon2id = la seule, cf. spec §5).
+
+---
+
+## I1 — Socle auth (superadmin + allowlist speakers + OIDC) ← on commence ici
+
+**But :** un superadmin peut se loguer (creds env-vars/Argon2id) et provisionner des speakers ;
+un speaker provisionné se logue en OIDC, un non-provisionné est refusé (403).
+
+### Modules / packages touchés (`arago-server`)
+- `io.vidocq.tools.arago.auth` — `PasswordHasher` (Argon2id, repli PBKDF2-JDK), `SuperadminAuth`,
+  `JwtIssuer`/`JwtVerifier` (HS256, claims `role`/`aud`/`exp`), `SecurityContextFilter` (JAX-RS).
+- `io.vidocq.tools.arago.persistence` — entités `Speaker`, `AdminAudit` + `SpeakerRepository`
+  (Mansart, déjà câblé en Phase 0) + migration Flyway `V2__speakers.sql`.
+- `io.vidocq.tools.arago.admin` — `AdminLoginResource` (`POST /api/admin/login`),
+  `SpeakerAdminResource` (CRUD `/api/admin/speakers`), `AdminAuditResource`.
+- `io.vidocq.tools.arago.oidc` — `OidcCallbackResource` : enforcement allowlist
+  (résolution email → `Speaker`, 403 `speaker_not_provisioned`, liaison `sub` au 1er login).
+- `arago hash-password` — petit goal/CLI (lecture stdin masqué, sortie PHC, jamais de clair).
+
+### Endpoints exposés (cf. spec §8)
+`POST /api/admin/login`, `GET/POST /api/admin/speakers`, `PATCH/DELETE /api/admin/speakers/{id}`,
+`GET /api/admin/rooms` (stub jusqu'à I2), `GET /api/admin/audit`,
+`GET /api/oidc/login`, `GET /api/oidc/callback`.
+
+### Config (spec §14)
+`ARAGO_SUPERADMIN_USER`, `ARAGO_SUPERADMIN_PASSWORD_HASH`, `arago.superadmin.token-ttl-minutes`,
+`arago.attendee.hmac-secret` (réutilisée pour signer le JWT superadmin), `arago.oidc.*`.
+
+### Tests (TDD, dans l'ordre rouge→vert)
+1. `PasswordHasherTest` — verify OK / KO, constant-time, format PHC, repli PBKDF2.
+2. `SuperadminAuthTest` — login OK → JWT `role=superadmin` ; mauvais mdp → 401 uniforme ;
+   hash absent → endpoint désactivé (503) ; rate-limit/lockout.
+3. `SpeakerAllowlistTest` — email absent → 403 `speaker_not_provisioned` ; présent+enabled →
+   liaison `sub` au 1er login ; `enabled=false` → refusé.
+4. `SpeakerAdminResourceTest` (JAX-RS) — CRUD complet, accès refusé sans JWT superadmin.
+5. `JwtIssuerVerifierTest` — `aud`/`exp`/`role`, JWT superadmin refusé sur WS (audience).
+6. Test « no-secret-in-logs » étendu : aucun mot de passe / hash dans les logs.
+
+### Décisions à confirmer avant code
+- **Lib Argon2id** : *Password4j* (pur Java, API simple) **ou** *BouncyCastle* **ou** repli
+  PBKDF2-JDK zéro-dep ? (impacte le `pom` + la justification §15.3).
+- **Console `/admin`** : page Svelte dans `arago-web` dès I1, ou juste les endpoints REST +
+  tests en I1 et l'UI en I2 ? (proposé : endpoints d'abord, UI ensuite).
+- **Stub Keycloak en test** : on teste l'enforcement allowlist avec un JWT OIDC forgé (clé de test)
+  plutôt qu'un vrai Keycloak (Testcontainers Keycloak = lourd ; à réserver à un test d'intégration opt-in).
+
+---
+
+## I2 — Room lifecycle + QR (DRAFT→ACTIVE, PIN unique)
+`Room`/`RoomRepository` (déjà esquissés Phase 0), `RoomResource` (create/get/open/end),
+génération PIN unique (DRAFT+ACTIVE), QR SVG (`/api/rooms/{id}/qrcode.svg`), page projection.
+Supervision globale `/api/admin/rooms` câblée pour de vrai.
+
+## I3 — Chat temps réel (WebSocket Chappe) ← driver de validation du WS Chappe
+Hub `/ws/rooms/{pin}`, handshake JWT (speaker/attendee), `chat.send`/`chat.new`, persistance
+`ChatMessage`, flag `persistent` (toggle disabled sans email), sanitization markdown centralisée.
+
+## I4 — Email opt-in + RGPD
+Join attendee (pseudo + email opt-in + **consentement non pré-coché**), `AttendeeProfile`/`Consent`,
+`reply-email` speaker (sans voir l'email), magic link + page « Mes données » + droit à l'oubli,
+job de purge quotidien idempotent, page `/privacy`, filtre logs (no email).
+
+---
+
+## Ordre de commit (I1)
+1. `V2__speakers.sql` + entités/repos (rouge: SpeakerAllowlistTest)
+2. `PasswordHasher` + tests (vert)
+3. `JwtIssuer`/`JwtVerifier` + tests
+4. `AdminLoginResource` + rate-limit + audit
+5. `SpeakerAdminResource` CRUD
+6. `OidcCallbackResource` enforcement allowlist
+7. `arago hash-password` CLI
+8. doc README (section « bootstrap superadmin »)
