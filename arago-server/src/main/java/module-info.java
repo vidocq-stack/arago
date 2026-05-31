@@ -29,6 +29,7 @@ module io.vidocq.tools.arago.server {
     requires io.vidocq.runtime.ext.mansart.data;
     requires io.vidocq.runtime.ext.mansart.transactions;
     requires io.vidocq.runtime.ext.ravel;
+    requires io.vidocq.runtime.ext.knock;
 
     requires io.vidocq.chappe.api;
     requires io.vidocq.vauban.core;

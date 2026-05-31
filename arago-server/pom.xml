@@ -35,9 +35,14 @@
             <groupId>io.vidocq.runtime</groupId>
             <artifactId>vidocq-runtime-ravel-extension</artifactId>
         </dependency>
-        <!-- MicroProfile Health (knock) retiré en Phase 0 : son BCE n'est pas aligné avec
-             vauban 0.1.0 (release) → échec au boot. Voir BUG.md ARAGO-003. En attendant,
-             HealthResource fournit un /api/health minimal. -->
+        <!-- MicroProfile Health → /health, /health/live|ready|started au chemin racine standard.
+             Le runtime knock-extension porte la ressource @Path (adapter Cassini + index Vauban
+             pré-générés) ; knock-cdi-vauban livre son index Vauban (HealthCheckRegistry résolu) ;
+             le mount /health est scopé au package knock via vidocq.properties. ARAGO-002/003 résolus. -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-knock-extension</artifactId>
+        </dependency>
 
         <!-- Mansart pool + Jakarta Data + transactions -->
         <dependency>
@@ -231,6 +236,29 @@
                 </executions>
             </plugin>
 
+            <!-- knock-jaxrs est un module JAX-RS pur (sans Cassini) : on tisse son adapter Cassini
+                 dans une COPIE repackagée à notre build (cassini-maven-plugin), sans toucher le jar
+                 publié de knock. Produit target/cassini-repackaged/io.vidocq.knock-knock-jaxrs.jar. -->
+            <plugin>
+                <groupId>io.vidocq.cassini</groupId>
+                <artifactId>cassini-maven-plugin</artifactId>
+                <version>${cassini.version}</version>
+                <executions>
+                    <execution>
+                        <id>repackage-knock-jaxrs</id>
+                        <phase>prepare-package</phase>
+                        <goals><goal>generate</goal></goals>
+                        <configuration>
+                            <scope>dependencies</scope>
+                            <includeArtifacts>
+                                <includeArtifact>io.vidocq.knock:knock-jaxrs</includeArtifact>
+                            </includeArtifacts>
+                            <repackageModularDependencies>true</repackageModularDependencies>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Tests sur classpath (pas de module-info de test) : évite le casse-tête patch-module. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -252,6 +280,34 @@
                         <configuration>
                             <outputDirectory>${project.build.directory}/dependency</outputDirectory>
                             <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Substitue le knock-jaxrs vanilla (copié par copy-deps) par sa copie repackagée
+                 (adapter Cassini tissé) dans target/dependency, avant que le Dockerfile la copie.
+                 Même phase 'package', déclaré APRÈS maven-dependency-plugin → s'exécute après. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>swap-repackaged-knock-jaxrs</id>
+                        <phase>package</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <delete>
+                                    <fileset dir="${project.build.directory}/dependency"
+                                             includes="knock-jaxrs-*.jar"/>
+                                </delete>
+                                <copy todir="${project.build.directory}/dependency">
+                                    <fileset dir="${project.build.directory}/cassini-repackaged"
+                                             includes="*-cassini.jar"/>
+                                </copy>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>

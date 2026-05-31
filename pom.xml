@@ -69,7 +69,7 @@
         <vauban.version>0.1.0</vauban.version>
         <vidocq.runtime.version>0.1.0-SNAPSHOT</vidocq.runtime.version>
         <cassini.version>0.1.0-SNAPSHOT</cassini.version>
-        <chappe.version>0.1.0-SNAPSHOT</chappe.version>
+        <chappe.version>0.2.0-SNAPSHOT</chappe.version>
         <champollion.version>0.1.0-SNAPSHOT</champollion.version>
         <mansart.version>0.1.0-SNAPSHOT</mansart.version>
 
