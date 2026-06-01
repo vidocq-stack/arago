@@ -34,6 +34,9 @@ module io.vidocq.tools.arago.server {
     // MP Config API — @ConfigProperty injection of superadmin/attendee settings (resolved by ravel).
     requires org.eclipse.microprofile.config;
     requires io.vidocq.runtime.ext.knock;
+    // MicroProfile JWT (cervantes) — validate Keycloak Bearer tokens; inject JsonWebToken in resources.
+    requires io.vidocq.runtime.ext.cervantes.jwt;
+    requires org.eclipse.microprofile.jwt;
 
     requires io.vidocq.chappe.api;
     requires io.vidocq.vauban.core;
@@ -47,6 +50,7 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.persistence;
     opens io.vidocq.tools.arago.rest;
     opens io.vidocq.tools.arago.admin;
+    opens io.vidocq.tools.arago.oidc;
 
     // Flyway (automatic module) scans the classpath for migrations; resources in a named module's
     // packages are encapsulated, so open the migration "package" to make them discoverable.

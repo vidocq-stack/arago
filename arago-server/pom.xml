@@ -43,6 +43,11 @@
             <groupId>io.vidocq.runtime</groupId>
             <artifactId>vidocq-runtime-knock-extension</artifactId>
         </dependency>
+        <!-- MicroProfile JWT (cervantes) : valide les Bearer RS256 émis par Keycloak (OIDC). -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-cervantes-jwt-extension</artifactId>
+        </dependency>
 
         <!-- Mansart pool + Jakarta Data + transactions -->
         <dependency>
