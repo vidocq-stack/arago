@@ -27,12 +27,16 @@ public class RestSteps {
     private HttpResponse<String> response;
     private String bearer; // scenario-local superadmin token, attached to requests once logged in
 
+    // A distinct client IP per scenario (new glue instance), sent as X-Forwarded-For — so the login
+    // rate limiter buckets each scenario separately and one scenario's attempts don't throttle another.
+    private static final java.util.concurrent.atomic.AtomicInteger SEQ = new java.util.concurrent.atomic.AtomicInteger();
+    private final String clientIp = "10.0." + (SEQ.incrementAndGet() % 250) + ".7";
+
     @Given("I am logged in as superadmin")
     public void i_am_logged_in_as_superadmin() throws Exception {
         String body = "{\"username\":\"" + AragoApp.SUPERADMIN_USER
                 + "\",\"password\":\"" + AragoApp.SUPERADMIN_PASSWORD + "\"}";
-        HttpRequest req = HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + "/api/admin/login"))
-                .timeout(Duration.ofSeconds(5))
+        HttpRequest req = request("/api/admin/login")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
@@ -57,6 +61,13 @@ public class RestSteps {
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
+    @When("I POST {string} {int} times with body:")
+    public void i_post_n_times_with_body(String path, int times, String body) throws Exception {
+        for (int i = 0; i < times; i++) {
+            i_post_with_body(path, body); // keeps the last response for the assertion
+        }
+    }
+
     @When("I PATCH {string} with body:")
     public void i_patch_with_body(String path, String body) throws Exception {
         HttpRequest req = authed(request(path))
@@ -72,7 +83,9 @@ public class RestSteps {
     }
 
     private HttpRequest.Builder request(String path) {
-        return HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path)).timeout(Duration.ofSeconds(5));
+        return HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path))
+                .timeout(Duration.ofSeconds(5))
+                .header("X-Forwarded-For", clientIp);
     }
 
     private HttpRequest.Builder authed(HttpRequest.Builder b) {

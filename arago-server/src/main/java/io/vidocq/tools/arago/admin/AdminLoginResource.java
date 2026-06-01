@@ -31,6 +31,9 @@ public class AdminLoginResource {
     @Inject
     AdminAuditService audit;
 
+    @Inject
+    LoginRateLimiter rateLimiter;
+
     private volatile SuperadminAuth auth;
 
     @POST
@@ -39,6 +42,12 @@ public class AdminLoginResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response login(LoginRequest request,
                           @HeaderParam("X-Forwarded-For") String forwardedFor) {
+        String clientKey = (forwardedFor == null || forwardedFor.isBlank())
+                ? "unknown" : forwardedFor.split(",")[0].trim();
+        if (!rateLimiter.allow(clientKey)) {
+            // §10.2: throttle brute force (5/min/IP).
+            return Response.status(429).build();
+        }
         SuperadminAuth a = auth();
         if (!a.enabled()) {
             // No hash/secret configured: feature off, no implicit credentials (spec §4.8/§10.2).
