@@ -35,10 +35,19 @@ symptôme, repro, hypothèse, statut.
   - **(3)** Trancher la coexistence dual-Bearer : soit cervantes devient **lenient** (Bearer invérifiable → anonyme,
     enforcement seulement sur `@RolesAllowed`), soit Arago passe le token superadmin sur un **schéma/header distinct**
     (ex. `X-Arago-Admin`) que cervantes ignore.
-- **État** : le fix (1) a été implémenté+vérifié en local sur cervantes (index bien embarqué, filtre découvert) puis
-  **reverté** (car il déclenche (2) et (3) qui cassent les endpoints superadmin d'Arago tant que non résolus). Arago
-  reste vert sur le socle 401 + l'allowlist (`SpeakerAllowlist` livré). Harnais Keycloak + scénarios 200/403 prêts,
-  hors repo en attendant (1)+(2)+(3).
+- **MAJ 2026-06-01 — (1) et (2) CORRIGÉS + poussés upstream :**
+  - **(1) FAIT** : `vauban-maven-plugin:generate` ajouté à `cervantes-cdi-vauban` + `cervantes-jaxrs` (et au lot
+    `ravel/cyrano/heisenberg/dirac/humboldt-cdi` + `cassini-cdi-vauban`) → jars embarquent `META-INF/vauban-beans.list`,
+    filtre/producteurs découverts. **Sans opens** (règle corrigée : la BCE est dans un package exporté → vauban-core y
+    accède en public ; l'`opens to vauban.core` n'est requis QUE si la BCE est dans un package non-exporté, cas knock).
+    Au passage : `cervantes-cassini` **renommé `cervantes-jaxrs`** (impl-agnostique JAX-RS). Commits : cervantes `6bfbb8b`,
+    vidocq `02d88b5`, + 6 modules (`ravel 36105c6`, `cassini 6f050a6`, `cyrano 1e0a0fc`, `heisenberg e1132b1`, `dirac aeb9ba4`, `humboldt c2c9380`).
+  - **(2) FAIT** : `JwtAuthenticationFilter` est inerte si `validator == null` (pas de NPE). **TCK MP-JWT 2.1 : 206/206 PASS.**
+  - **Vérifié** : arago **reste vert** (filtre cervantes désormais découvert mais inerte sans `mp.jwt.*` → endpoints superadmin OK).
+- **Reste (3) — design dual-issuer** : seul blocage restant pour l'enforcement OIDC. Quand `mp.jwt.*` EST configuré (chemin
+  OIDC), le filtre rejette en 401 le Bearer HS256 superadmin. Trancher : cervantes *lenient* (Bearer invérifiable → anonyme,
+  enforcement seulement sur `@RolesAllowed`) OU superadmin sur header distinct (`X-Arago-Admin`). Puis **ré-activer** le harnais
+  Keycloak + scénarios `/api/oidc/me` 200/403 (prêts, hors repo ; `SpeakerAllowlist` livré).
 
 ### ARAGO-001 — `/metrics` non câblé en Phase 0
 - **Date** : 2026-05-30
