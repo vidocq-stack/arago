@@ -17,9 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class UiSteps {
 
+    private final World world;
     private Playwright playwright;
     private Browser browser;
     private Page page;
+
+    public UiSteps(World world) {
+        this.world = world;
+    }
 
     @When("I open the SPA at {string}")
     public void i_open_the_spa_at(String path) {
@@ -27,6 +32,18 @@ public class UiSteps {
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
         page = browser.newPage();
         page.navigate(AragoApp.baseUrl() + path);
+    }
+
+    /** Fills an input with a value captured earlier (e.g. a room PIN created over REST). */
+    @When("I fill {string} with remembered {string}")
+    public void i_fill_with_remembered(String testId, String name) {
+        page.fill("[data-testid='" + testId + "']", world.vars.get(name));
+    }
+
+    /** Clicks a seat in the top-down view by its 0-indexed coordinate (cf. arago-spec §4.5). */
+    @When("I click seat {int} {int} {int}")
+    public void i_click_seat(int row, int block, int seat) {
+        page.click("[data-testid='seat-" + row + "-" + block + "-" + seat + "']");
     }
 
     @Then("the page title contains {string}")

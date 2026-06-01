@@ -1,24 +1,167 @@
 <script>
-  // Page d'accueil attendee (Phase 0) : champ PIN + sonde de santé.
-  // Le flow de join réel (POST /api/rooms/join) arrivera en Phase 1.
+  // Attendee SPA (arago-spec §4.2/§4.5): join a room by PIN + pseudo, then — in a LAB room — see the
+  // top-down seating plan, tap a free seat to sit (first-come-first-serve, server-authoritative), and
+  // raise a "need help" request. All real-time state flows over the room WebSocket (RoomSocket);
+  // the browser can't set the Authorization header on a handshake, so the attendee token rides ?token=.
+  let view = $state('join'); // 'join' | 'room'
+
+  // --- join inputs ---
   let pin = $state('');
-  let health = $state('…');
-
+  let pseudo = $state('');
+  let joinError = $state('');
   const pinDigits = $derived(pin.replace(/\D/g, '').slice(0, 6));
+  const canJoin = $derived(pinDigits.length === 6 && pseudo.trim().length > 0);
 
-  async function probeHealth() {
+  // --- room state ---
+  let token = $state(null);
+  let roomMode = $state(null);
+  let myPseudo = $state('');
+  let ws = $state(null);
+  let layout = $state(null);          // {rows, blocks:[{size,label}], stagePos, rowLabels, blockedSeats:[{row,block,seat}]}
+  let seats = $state({});             // "r-b-s" -> occupant pseudo
+  let mySeat = $state(null);          // {row,block,seat} | null
+  let myHelp = $state(null);          // null | 'PENDING' | 'CLAIMED' | 'RESOLVED' | 'CANCELLED'
+  let notice = $state('');            // transient message (e.g. seat taken)
+
+  const seatKey = (r, b, s) => `${r}-${b}-${s}`;
+
+  async function join(e) {
+    e?.preventDefault();
+    joinError = '';
     try {
-      const res = await fetch('/api/health');
-      const body = await res.json();
-      health = body.status ?? (res.ok ? 'UP' : 'DOWN');
+      const res = await fetch('/api/rooms/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pinDigits, pseudo: pseudo.trim() }),
+      });
+      if (!res.ok) {
+        joinError = res.status === 404 ? 'Room introuvable ou fermée' : 'Impossible de rejoindre';
+        return;
+      }
+      const data = await res.json();
+      token = data.token;
+      roomMode = data.mode;
+      myPseudo = pseudo.trim();
+      connect();
+      view = 'room';
     } catch {
-      health = 'DOWN';
+      joinError = 'Impossible de rejoindre';
     }
   }
 
-  $effect(() => {
-    probeHealth();
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${proto}://${location.host}/ws/rooms/${pinDigits}?token=${encodeURIComponent(token)}`;
+    const socket = new WebSocket(url);
+    socket.onmessage = (ev) => onFrame(ev.data);
+    ws = socket;
+  }
+
+  function onFrame(raw) {
+    let m;
+    try { m = JSON.parse(raw); } catch { return; }
+    switch (m.type) {
+      case 'layout': layout = m.layout; break;
+      case 'seat': onSeat(m); break;
+      case 'help': onHelp(m); break;
+      // chat/pin frames are handled by other views; ignored here.
+    }
+  }
+
+  function onSeat(m) {
+    const key = seatKey(m.row, m.block, m.seat);
+    if (m.action === 'taken') {
+      seats = { ...seats, [key]: m.attendee };
+      if (m.attendee === myPseudo) {
+        mySeat = { row: m.row, block: m.block, seat: m.seat };
+        notice = '';
+      }
+    } else if (m.action === 'free') {
+      const next = { ...seats };
+      delete next[key];
+      seats = next;
+      if (mySeat && key === seatKey(mySeat.row, mySeat.block, mySeat.seat)) {
+        mySeat = null;
+      }
+    } else if (m.action === 'rejected' && m.attendee === myPseudo) {
+      notice = m.reason === 'seat-taken' ? 'Cette place vient d’être prise.'
+             : m.reason === 'invalid-seat' ? 'Place invalide.'
+             : 'Place indisponible.';
+    }
+  }
+
+  function onHelp(m) {
+    if (m.attendee === myPseudo) {
+      myHelp = m.status;
+    }
+  }
+
+  function claim(r, b, s) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (isOccupied(r, b, s) || isBlocked(r, b, s)) return;
+    notice = '';
+    ws.send(JSON.stringify({ type: 'seat', row: r, block: b, seat: s }));
+  }
+
+  function raiseHelp() {
+    ws?.send(JSON.stringify({ type: 'help' }));
+  }
+
+  function cancelHelp() {
+    ws?.send(JSON.stringify({ type: 'help-cancel' }));
+  }
+
+  const isBlocked = (r, b, s) =>
+    !!layout?.blockedSeats?.some((x) => x.row === r && x.block === b && x.seat === s);
+  const isOccupied = (r, b, s) => !!seats[seatKey(r, b, s)];
+  const isMine = (r, b, s) =>
+    mySeat && mySeat.row === r && mySeat.block === b && mySeat.seat === s;
+
+  const helpActive = $derived(myHelp === 'PENDING' || myHelp === 'CLAIMED');
+
+  function rowLabel(r) {
+    if (layout?.rowLabels === 'ALPHA') {
+      return String.fromCharCode(65 + r);
+    }
+    return String(r + 1);
+  }
+
+  // --- top-down geometry (cf. arago-spec §4.5) ---
+  const SEAT = 26, SGAP = 5, BGAP = 22, RGAP = 16, PAD = 18, STAGE = 22, ROWLBL = 22;
+
+  const geom = $derived.by(() => {
+    if (!layout || !layout.blocks?.length) return null;
+    const blocks = layout.blocks;
+    const blockWidth = (b) => b.size * SEAT + (b.size - 1) * SGAP;
+    const blockX = [];
+    let x = PAD + ROWLBL;
+    for (const b of blocks) { blockX.push(x); x += blockWidth(b) + BGAP; }
+    const width = x - BGAP + PAD;
+    const top = PAD + STAGE + 10;
+    const height = top + layout.rows * SEAT + (layout.rows - 1) * RGAP + PAD;
+
+    const cells = [];
+    for (let r = 0; r < layout.rows; r++) {
+      const y = top + r * (SEAT + RGAP);
+      for (let bi = 0; bi < blocks.length; bi++) {
+        for (let s = 0; s < blocks[bi].size; s++) {
+          cells.push({ r, b: bi, s, x: blockX[bi] + s * (SEAT + SGAP), y });
+        }
+      }
+    }
+    const rowYs = Array.from({ length: layout.rows }, (_, r) => top + r * (SEAT + RGAP));
+    const blockLabels = blocks.map((b, bi) => ({
+      label: b.label || `B${bi + 1}`, x: blockX[bi] + blockWidth(b) / 2,
+    }));
+    return { width, height, cells, rowYs, blockLabels, stageW: width - 2 * PAD };
   });
+
+  function seatState(r, b, s) {
+    if (isMine(r, b, s)) return helpActive ? 'mine-help' : 'mine';
+    if (isBlocked(r, b, s)) return 'blocked';
+    if (isOccupied(r, b, s)) return 'occupied';
+    return 'free';
+  }
 </script>
 
 <main>
@@ -27,132 +170,167 @@
     <p class="tagline">Speaker &amp; Lab Companion</p>
   </header>
 
-  <section class="join-card">
-    <label for="pin">Code de la room</label>
-    <input
-      id="pin"
-      inputmode="numeric"
-      autocomplete="off"
-      placeholder="123456"
-      maxlength="6"
-      bind:value={pin}
-    />
-    <button disabled={pinDigits.length !== 6}>Rejoindre</button>
-    <p class="hint">Pas de compte, pas d'installation — juste le PIN affiché à l'écran.</p>
-  </section>
+  {#if view === 'join'}
+    <form class="join-card" onsubmit={join} data-testid="join-form">
+      <label for="pin">Code de la room</label>
+      <input id="pin" data-testid="join-pin" inputmode="numeric" autocomplete="off"
+             placeholder="123456" maxlength="6" bind:value={pin} />
+      <label for="pseudo">Votre pseudo</label>
+      <input id="pseudo" data-testid="join-pseudo" autocomplete="off" placeholder="Ada"
+             bind:value={pseudo} />
+      <button type="submit" data-testid="join-submit" disabled={!canJoin}>Rejoindre</button>
+      {#if joinError}<p class="error" data-testid="join-error">{joinError}</p>{/if}
+      <p class="hint">Pas de compte, pas d'installation — juste le PIN affiché à l'écran.</p>
+    </form>
+  {:else}
+    <section class="room" data-testid="room">
+      <div class="bar">
+        <span class="mode">{roomMode === 'LAB' || roomMode === 'HYBRID' ? 'Atelier' : 'Conférence'}</span>
+        {#if mySeat}
+          <span class="seatlbl" data-testid="my-seat-label">
+            Place : R{mySeat.row + 1} · {layout?.blocks?.[mySeat.block]?.label || 'B' + (mySeat.block + 1)} · S{mySeat.seat + 1}
+          </span>
+        {:else if geom}
+          <span class="seatlbl" data-testid="my-seat-label">Choisissez une place</span>
+        {/if}
+      </div>
+
+      {#if notice}<p class="notice" data-testid="notice">{notice}</p>{/if}
+
+      {#if geom}
+        <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
+             width={geom.width} height={geom.height} role="group" aria-label="Plan de la salle">
+          <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
+          <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">Scène</text>
+
+          {#each geom.blockLabels as bl}
+            <text class="block-lbl" x={bl.x} y={PAD + STAGE + 8} text-anchor="middle">{bl.label}</text>
+          {/each}
+          {#each geom.rowYs as y, r}
+            <text class="row-lbl" x={PAD} y={y + SEAT / 2 + 4}>{rowLabel(r)}</text>
+          {/each}
+
+          {#each geom.cells as c (c.r + '-' + c.b + '-' + c.s)}
+            {@const st = seatState(c.r, c.b, c.s)}
+            <rect class={`seat ${st}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={st}
+                  x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
+                  role="button" tabindex="0" aria-label={`R${c.r + 1} S${c.s + 1}`}
+                  onclick={() => claim(c.r, c.b, c.s)}
+                  onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && claim(c.r, c.b, c.s)} />
+          {/each}
+        </svg>
+
+        <div class="legend">
+          <span><i class="sw free"></i> libre</span>
+          <span><i class="sw occupied"></i> occupé</span>
+          <span><i class="sw mine"></i> vous</span>
+          <span><i class="sw blocked"></i> indispo.</span>
+        </div>
+
+        <div class="help">
+          {#if helpActive}
+            <span class="help-status" data-testid="help-status">
+              {myHelp === 'CLAIMED' ? 'Un speaker arrive…' : 'Aide demandée'}
+            </span>
+            <button class="ghost" data-testid="help-cancel" onclick={cancelHelp}>Annuler</button>
+          {:else}
+            <button class="help-btn" data-testid="help-button" onclick={raiseHelp}>Besoin d'aide</button>
+          {/if}
+        </div>
+      {:else}
+        <p class="hint" data-testid="no-layout">Cette salle n'a pas de plan (mode conférence).</p>
+      {/if}
+    </section>
+  {/if}
 
   <footer>
-    <span class="pill" class:up={health === 'UP'} class:down={health === 'DOWN'}>
-      backend&nbsp;: {health}
-    </span>
     <a href="/privacy.html">Confidentialité</a>
   </footer>
 </main>
 
 <style>
   main {
-    max-width: 28rem;
+    max-width: 40rem;
     margin: 0 auto;
-    padding: 3rem 1.25rem;
+    padding: 2.5rem 1.25rem;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.5rem;
     min-height: 100vh;
   }
-
-  header {
-    text-align: center;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 3rem;
-    letter-spacing: 0.04em;
-    color: var(--arago-bordeaux);
-  }
-
-  .tagline {
-    margin: 0.25rem 0 0;
-    color: var(--arago-gold);
-    font-style: italic;
-  }
+  header { text-align: center; }
+  h1 { margin: 0; font-size: 2.6rem; letter-spacing: 0.04em; color: var(--arago-bordeaux); }
+  .tagline { margin: 0.2rem 0 0; color: var(--arago-gold); font-style: italic; }
 
   .join-card {
     background: rgba(255, 255, 255, 0.45);
     border: 1px solid var(--arago-gold);
     border-radius: 0.75rem;
-    padding: 1.75rem 1.5rem;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 0.85rem;
+    gap: 0.7rem;
     box-shadow: 0 8px 24px rgba(26, 20, 16, 0.12);
   }
-
-  label {
-    font-weight: 600;
-  }
-
+  label { font-weight: 600; }
   input {
-    font: inherit;
-    font-size: 2rem;
-    letter-spacing: 0.5em;
-    text-align: center;
-    padding: 0.6rem 0.4rem;
-    border: 2px solid var(--arago-bordeaux);
-    border-radius: 0.5rem;
-    background: var(--arago-cream);
-    color: var(--arago-ink);
+    font: inherit; padding: 0.55rem 0.6rem;
+    border: 2px solid var(--arago-bordeaux); border-radius: 0.5rem;
+    background: var(--arago-cream); color: var(--arago-ink);
   }
-
+  #pin { font-size: 1.8rem; letter-spacing: 0.4em; text-align: center; }
   button {
-    font: inherit;
-    font-weight: 700;
-    padding: 0.75rem 1rem;
-    border: none;
-    border-radius: 0.5rem;
-    background: var(--arago-bordeaux);
-    color: var(--arago-cream);
-    cursor: pointer;
+    font: inherit; font-weight: 700; padding: 0.7rem 1rem; border: none;
+    border-radius: 0.5rem; background: var(--arago-bordeaux); color: var(--arago-cream); cursor: pointer;
+  }
+  button:disabled { background: var(--arago-paper); color: rgba(26, 20, 16, 0.4); cursor: not-allowed; }
+  .hint { margin: 0; font-size: 0.85rem; color: rgba(26, 20, 16, 0.7); }
+  .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
+
+  .room { display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
+  .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; }
+  .mode {
+    background: var(--arago-bordeaux); color: var(--arago-cream);
+    padding: 0.15rem 0.7rem; border-radius: 999px; font-size: 0.85rem;
+  }
+  .seatlbl { font-weight: 600; }
+  .notice {
+    margin: 0; align-self: stretch; text-align: center;
+    background: var(--arago-warn); color: var(--arago-cream);
+    padding: 0.4rem 0.7rem; border-radius: 0.4rem;
   }
 
-  button:disabled {
-    background: var(--arago-paper);
-    color: rgba(26, 20, 16, 0.4);
-    cursor: not-allowed;
+  .map {
+    max-width: 100%; height: auto;
+    background: rgba(255, 255, 255, 0.4);
+    border: 1px solid var(--arago-gold); border-radius: 0.6rem;
   }
+  .stage { fill: var(--arago-ink); opacity: 0.85; }
+  .stage-txt { fill: var(--arago-cream); font-size: 12px; letter-spacing: 0.2em; }
+  .block-lbl { fill: var(--arago-bordeaux); font-size: 11px; font-weight: 700; }
+  .row-lbl { fill: rgba(26, 20, 16, 0.6); font-size: 12px; }
 
-  .hint {
-    margin: 0;
-    font-size: 0.85rem;
-    color: rgba(26, 20, 16, 0.7);
-  }
+  .seat { stroke: rgba(26, 20, 16, 0.25); stroke-width: 1; cursor: pointer; }
+  .seat.free { fill: var(--arago-cream); }
+  .seat.free:hover { fill: #fff6e2; }
+  .seat.occupied { fill: var(--arago-paper); stroke: rgba(26, 20, 16, 0.4); cursor: not-allowed; }
+  .seat.blocked { fill: #b9b2a3; cursor: not-allowed; }
+  .seat.mine { fill: var(--arago-bordeaux); stroke: var(--arago-ink); }
+  .seat.mine-help { fill: var(--arago-gold); stroke: var(--arago-bordeaux); stroke-width: 2; }
 
-  footer {
-    margin-top: auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.85rem;
-  }
+  .legend { display: flex; gap: 1rem; font-size: 0.8rem; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .sw { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid rgba(26, 20, 16, 0.3); }
+  .sw.free { background: var(--arago-cream); }
+  .sw.occupied { background: var(--arago-paper); }
+  .sw.mine { background: var(--arago-bordeaux); }
+  .sw.blocked { background: #b9b2a3; }
 
-  footer a {
-    color: var(--arago-bordeaux);
-  }
+  .help { display: flex; gap: 0.6rem; align-items: center; }
+  .help-btn { background: var(--arago-gold); }
+  .help-status { font-weight: 700; color: var(--arago-bordeaux); }
+  .ghost { background: transparent; color: var(--arago-bordeaux); border: 1px solid var(--arago-bordeaux); }
 
-  .pill {
-    padding: 0.15rem 0.6rem;
-    border-radius: 999px;
-    background: var(--arago-paper);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .pill.up {
-    background: var(--arago-success);
-    color: var(--arago-cream);
-  }
-
-  .pill.down {
-    background: var(--arago-danger);
-    color: var(--arago-cream);
-  }
+  footer { margin-top: auto; text-align: center; font-size: 0.85rem; }
+  footer a { color: var(--arago-bordeaux); }
 </style>

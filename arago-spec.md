@@ -157,10 +157,16 @@ Exemple concret : "10 + 10 + 3 sièges par rangée, 5 rangées" → 3 blocs de t
   (`onClose`). La position d'une demande d'aide est désormais **résolue depuis le siège courant**
   (snapshot `(row, blockIndex, seatInBlock)` + label `R1·Center·S3`).
 
-Reporté à une slice ultérieure : l'**UI top-down** (rendu SVG du plan, coloration des sièges crème/sépia/
-jaune/bordeaux, tap pour s'asseoir, éditeur de layout côté speaker) — le **backend temps réel** ci-dessus est
-prêt à l'alimenter. Le cooldown 60 s post-résolution n'est pas encore appliqué (seule l'unicité « 1 active »
-l'est).
+- **UI attendee top-down** : `arago-web` (Svelte) — flow join (PIN + pseudo → `POST /api/rooms/join`),
+  connexion WebSocket (`?token=`, le navigateur ne peut pas poser le header `Authorization` au handshake),
+  **plan SVG vue de dessus** (scène, rangées, blocs, allées), sièges colorés crème=libre / sépia=occupé /
+  bordeaux=vous / gris=indispo. / or=votre aide en cours, **tap sur un siège libre** pour s'asseoir
+  (autorité serveur), bouton « Besoin d'aide » + annulation. Couvert par `seating.feature` (`@ui` Playwright).
+
+Reporté à une slice ultérieure : le **panneau speaker** (plan top-down côté speaker avec la file d'aide
+clignotante + claim/resolve depuis la carte) et l'**éditeur de layout côté speaker** (aujourd'hui le layout
+se crée via l'API `POST /api/rooms`). Le cooldown 60 s post-résolution n'est pas encore appliqué (seule
+l'unicité « 1 active » l'est).
 
 **Hors scope v1** : plans de salle non rectangulaires (théâtres en arc de cercle, salles en U). Si besoin futur, on ajoutera un type `FREE` avec image uploadée — phase 6+.
 

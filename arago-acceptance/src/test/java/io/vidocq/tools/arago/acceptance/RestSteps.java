@@ -37,7 +37,12 @@ public class RestSteps {
     private String bearer;     // Keycloak OIDC token → Authorization: Bearer (validated by cervantes)
 
     // Values captured from a response and substituted into later paths as {name} (e.g. a room id).
-    private final java.util.Map<String, String> vars = new java.util.HashMap<>();
+    // Shared with the other step classes via the injected World (see UiSteps for the UI side).
+    private final java.util.Map<String, String> vars;
+
+    public RestSteps(World world) {
+        this.vars = world.vars;
+    }
 
     // Room WebSocket (slice 4): the client connection + the messages it has received (thread-safe,
     // the JDK WebSocket delivers on its own thread). wsFrame reassembles fragmented text frames.

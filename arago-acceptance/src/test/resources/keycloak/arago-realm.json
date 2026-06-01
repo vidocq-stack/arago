@@ -99,6 +99,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "ivan",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ivan@oidc.test",
+      "firstName": "Ivan",
+      "lastName": "Sutherland",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }
