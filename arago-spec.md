@@ -694,7 +694,7 @@ WebSocket : `wss://.../ws/rooms/{pin}` avec `Authorization` (Bearer JWT speaker 
 - [ ] Un secret pinné disparaît à la fermeture de la room et ne réapparaît dans aucun log.
 - [ ] Une demande d'aide en mode LAB notifie le speaker en < 1 s.
 - [ ] L'app tient un kill -9 et redémarre propre (pas de fuite ressource Jetty).
-- [ ] `/health` répond `UP` et `/metrics` expose le compteur de rooms actives.
+- [~] `/health` répond `UP` (knock) **et `/metrics` est exposé** (OpenMetrics/Prometheus via dirac, MP Metrics 5.1 — ARAGO-001). Reste : enregistrer le compteur applicatif « rooms actives » (`@Gauge`/`@Counted`) côté Arago.
 - [ ] Le binaire pèse < 60 Mo (uberjar) et démarre en < 1 s sur M4.
 - [ ] La page `/privacy` est publiée et listée dans le footer.
 

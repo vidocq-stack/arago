@@ -43,6 +43,14 @@
             <groupId>io.vidocq.runtime</groupId>
             <artifactId>vidocq-runtime-knock-extension</artifactId>
         </dependency>
+        <!-- MicroProfile Metrics (dirac) → /metrics (OpenMetrics/Prometheus). Comme knock : dirac-rest
+             est un module JAX-RS pur (adapter Cassini tissé dans une copie repackagée au build ci-dessous,
+             index Vauban embarqué dans dirac-rest pour la découverte) ; dirac-cdi-vauban livre la BCE +
+             les producteurs MetricRegistry ; le mount /metrics est scopé au package dirac.rest. ARAGO-001. -->
+        <dependency>
+            <groupId>io.vidocq.runtime</groupId>
+            <artifactId>vidocq-runtime-dirac-extension</artifactId>
+        </dependency>
         <!-- MicroProfile JWT (cervantes) : valide les Bearer RS256 émis par Keycloak (OIDC). -->
         <dependency>
             <groupId>io.vidocq.runtime</groupId>
@@ -257,6 +265,7 @@
                             <scope>dependencies</scope>
                             <includeArtifacts>
                                 <includeArtifact>io.vidocq.knock:knock-jaxrs</includeArtifact>
+                                <includeArtifact>io.vidocq.dirac:dirac-rest</includeArtifact>
                             </includeArtifacts>
                             <repackageModularDependencies>true</repackageModularDependencies>
                         </configuration>
@@ -307,6 +316,8 @@
                                 <delete>
                                     <fileset dir="${project.build.directory}/dependency"
                                              includes="knock-jaxrs-*.jar"/>
+                                    <fileset dir="${project.build.directory}/dependency"
+                                             includes="dirac-rest-*.jar"/>
                                 </delete>
                                 <copy todir="${project.build.directory}/dependency">
                                     <fileset dir="${project.build.directory}/cassini-repackaged"

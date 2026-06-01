@@ -5,16 +5,30 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
-### ARAGO-001 — `/metrics` non câblé en Phase 0
-- **Date** : 2026-05-30
-- **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics, compteur de rooms
-  actives). Aucune extension runtime Vidocq « dirac » (MP Metrics) n'est packagée ; seule
-  `humboldt` (MP Telemetry/OTLP) existe, mais elle n'expose pas un scrape `/metrics` simple et
-  tirerait un exporter OTLP au boot.
-- **Statut** : différé. Décider de l'extension metrics (dirac à intégrer côté runtime, ou exposer
-  un endpoint dédié) avant de cocher le critère §12. Phase 0 livre `/api/health` (knock) seul.
+_(aucun)_
 
 ## Résolus
+
+### ARAGO-001 — `/metrics` câblé via dirac (MP Metrics 5.1) — extension runtime créée
+- **Date** : 2026-05-30 → résolu 2026-06-01
+- **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics). Aucune extension runtime
+  Vidocq « dirac » (MP Metrics) n'était packagée (seule `humboldt`/OTLP existait, sans scrape `/metrics` simple).
+- **Résolution** (modèle knock / ARAGO-003, **approche A — extension runtime réutilisable**) :
+  - **dirac** : `dirac-rest` (module JAX-RS pur, comme knock-jaxrs) embarque désormais son index Vauban
+    (`vauban-maven-plugin:generate`) → `MetricsResource` (@Path("/metrics")) découvrable par
+    `CassiniExtension` (qui interroge `VaubanBeanProvider.getResourceClasses()`). + `opens io.vidocq.dirac.rest
+    to … io.vidocq.vauban.core` (instanciation réflexive Vauban ; qualifié → Weld-safe, inerte au TCK).
+  - **vidocq** : nouveau module `vidocq-runtime-dirac-extension` (wrapper, zéro classe — mirror knock-extension) :
+    tire `dirac-rest` + `dirac-cdi-vauban` + `champollion-jsonp` + `cassini-rest-extension` ; `module-info`
+    re-exporte le graphe dirac. Enregistré dans le reactor core-extensions + dependencyManagement.
+  - **arago** : dépendance sur `vidocq-runtime-dirac-extension` ; `dirac-rest` ajouté au repackage Cassini
+    (adapter tissé pour le jar Docker/AOT) + swap ; mount `/metrics` (`strip-prefix=false`, scopé
+    `io.vidocq.dirac.rest`), `dirac.rest` exclu du mount `/api`.
+- **Vérifié** : acceptance `metrics.feature` → `GET /metrics` **200** + corps OpenMetrics (`# EOF`), in-process
+  avec OIDC actif (cervantes laisse la requête sans token anonyme). 18/18 scénarios verts, zéro régression.
+  TCK dirac MP-Metrics 5.1 rejoué après la modif dirac-rest → 127/127.
+- **Note** : endpoint non authentifié (scrape Prometheus ; restreint réseau en prod, cf. spec §4.8/§10.2).
+  L'observabilité « détaillée superadmin » (§4.8) reste un raffinement ultérieur.
 
 ### ARAGO-004 — Enforcement OIDC bloqué → 3 défauts cervantes/stack surfacés (décisions upstream)
 - **Date** : 2026-06-01 (diagnostic affiné après investigation complète)
