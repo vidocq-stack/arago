@@ -4,6 +4,7 @@ import jakarta.data.repository.BasicRepository;
 import jakarta.data.repository.Repository;
 import jakarta.transaction.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -19,4 +20,7 @@ public interface RoomRepository extends BasicRepository<Room, String> {
     long countByStatus(RoomStatus status);
 
     Optional<Room> findByPin(String pin);
+
+    /** Rooms owned by a speaker (their OIDC subject), most recent first. */
+    List<Room> findByOwnerSubOrderByCreatedAtDesc(String ownerSub);
 }

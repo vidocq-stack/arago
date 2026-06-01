@@ -29,6 +29,9 @@ public class RestSteps {
     private String adminToken; // superadmin HS256 token → X-Arago-Admin (ignored by cervantes/MP-JWT)
     private String bearer;     // Keycloak OIDC token → Authorization: Bearer (validated by cervantes)
 
+    // Values captured from a response and substituted into later paths as {name} (e.g. a room id).
+    private final java.util.Map<String, String> vars = new java.util.HashMap<>();
+
     // A distinct client IP per scenario (new glue instance), sent as X-Forwarded-For — so the login
     // rate limiter buckets each scenario separately and one scenario's attempts don't throttle another.
     private static final java.util.concurrent.atomic.AtomicInteger SEQ = new java.util.concurrent.atomic.AtomicInteger();
@@ -57,6 +60,19 @@ public class RestSteps {
     @When("I GET {string}")
     public void i_get(String path) throws Exception {
         response = http.send(authed(request(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Then("I remember {string} from the JSON field {string}")
+    public void i_remember_from_json_field(String name, String field) {
+        vars.put(name, json().getString(field));
+    }
+
+    @When("I POST {string}")
+    public void i_post_no_body(String path) throws Exception {
+        HttpRequest req = authed(request(path))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
     @When("I POST {string} with body:")
@@ -90,9 +106,18 @@ public class RestSteps {
     }
 
     private HttpRequest.Builder request(String path) {
-        return HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + path))
+        return HttpRequest.newBuilder(URI.create(AragoApp.baseUrl() + subst(path)))
                 .timeout(Duration.ofSeconds(5))
                 .header("X-Forwarded-For", clientIp);
+    }
+
+    /** Replaces {name} placeholders in a path with values captured via "I remember …". */
+    private String subst(String path) {
+        String result = path;
+        for (java.util.Map.Entry<String, String> e : vars.entrySet()) {
+            result = result.replace("{" + e.getKey() + "}", e.getValue());
+        }
+        return result;
     }
 
     private HttpRequest.Builder authed(HttpRequest.Builder b) {

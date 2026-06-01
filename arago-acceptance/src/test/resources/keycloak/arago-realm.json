@@ -12,8 +12,7 @@
       "directAccessGrantsEnabled": true,
       "protocol": "openid-connect",
       "redirectUris": [],
-      "webOrigins": [],
-      "defaultClientScopes": ["openid", "email", "profile", "roles"]
+      "webOrigins": []
     }
   ],
   "users": [
@@ -36,6 +35,18 @@
       "email": "bob@oidc.test",
       "firstName": "Bob",
       "lastName": "Stranger",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "carol@oidc.test",
+      "firstName": "Carol",
+      "lastName": "Speaker",
       "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }

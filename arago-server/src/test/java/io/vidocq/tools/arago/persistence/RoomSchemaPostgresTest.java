@@ -45,17 +45,17 @@ class RoomSchemaPostgresTest {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         try (Statement s = c.createStatement()) {
             // The container is shared across tests; start each from a clean slate, then apply the
-            // whole multi-statement script in one call (PostgreSQL simple-query protocol).
+            // rooms migrations in order (V1 create + V3 Phase 1 columns), as Flyway does at startup.
             s.execute("DROP TABLE IF EXISTS rooms");
-            s.execute(readMigration());
+            s.execute(readMigration("/db/migration/V1__init.sql"));
+            s.execute(readMigration("/db/migration/V3__rooms_phase1.sql"));
         }
         return c;
     }
 
-    private static String readMigration() throws Exception {
-        try (InputStream in = RoomSchemaPostgresTest.class
-                .getResourceAsStream("/db/migration/V1__init.sql")) {
-            assertNotNull(in, "V1__init.sql must be on the classpath");
+    private static String readMigration(String resource) throws Exception {
+        try (InputStream in = RoomSchemaPostgresTest.class.getResourceAsStream(resource)) {
+            assertNotNull(in, resource + " must be on the classpath");
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
@@ -94,12 +94,15 @@ class RoomSchemaPostgresTest {
     private static void insertRoom(Connection c, String id, String pin, String title, RoomStatus status)
             throws Exception {
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO rooms (id, pin, title, status, created_at) VALUES (?, ?, ?, ?, ?)")) {
+                "INSERT INTO rooms (id, pin, title, status, owner_sub, mode, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, id);
             ps.setString(2, pin);
             ps.setString(3, title);
             ps.setString(4, status.name());
-            ps.setObject(5, Instant.now().atOffset(ZoneOffset.UTC));
+            ps.setString(5, "owner-" + id);
+            ps.setString(6, RoomMode.CONF.name());
+            ps.setObject(7, Instant.now().atOffset(ZoneOffset.UTC));
             ps.executeUpdate();
         }
     }
