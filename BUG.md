@@ -5,6 +5,36 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
+### ARAGO-004 — Enforcement OIDC (`/api/oidc/me` 200/403) bloqué par 2 gaps upstream
+- **Date** : 2026-06-01
+- **Contexte** : Phase 1, I1-O1. `/api/oidc/me` doit valider un Bearer Keycloak (cervantes/MP-JWT)
+  puis appliquer l'allowlist (`SpeakerAllowlist` : 403 `speaker_not_provisioned`, bind sub au 1er login).
+  Le câblage + le cas **401 sans token** sont livrés et verts (commit `6ae4f29`). Le harnais Keycloak
+  Testcontainers (realm `arago` + 2 users + token via password-grant) a été écrit et **fonctionne**
+  (token RS256 obtenu, `email`/`iss` corrects ; pièges réglés : User Profile KC 24+ exige
+  `firstName`/`lastName`, sinon "Account is not fully set up"). Les cas **200/403 sont bloqués**, pour
+  deux raisons indépendantes — toutes deux **hors d'Arago** :
+  1. **`@Inject JsonWebToken` ne passe pas la validation build de Vauban** : le `@Produces JsonWebToken`
+     vit dans `cervantes-cdi-vauban` (dépendance), invisible à l'indexeur APT d'Arago. Le pattern de la
+     stack = ajouter `vidocq-runtime-cervantes-jwt-extension-codegen` (type pom) à `annotationProcessorPaths`
+     (l'IT cervantes le fait). **Mais cet artefact codegen n'est PAS publié sur central-snapshots**
+     (`dependency:get` → not found). → arago (et sa CI) ne peut pas l'utiliser.
+  2. **`@Context SecurityContext` ne reçoit pas le principal** posé par le filtre cervantes
+     (`@PreMatching` → `setSecurityContext(JwtSecurityContext)`). En contournement de (1) j'ai essayé
+     `@Context SecurityContext.getUserPrincipal()` → renvoie **null** (la ressource s'exécute, le filtre
+     ne l'a pas abort, mais Cassini ne propage pas le SecurityContext du filtre à l'injection `@Context`).
+- **Repro** : brancher cervantes (fait), exposer `/api/oidc/me`, présenter un vrai token Keycloak
+  → 401 (`no_principal:null`) au lieu de 200/403.
+- **Pistes de déblocage (au choix, upstream)** :
+  - **A.** Publier `vidocq-runtime-cervantes-jwt-extension-codegen` sur central-snapshots → puis
+    `@Inject JsonWebToken` + ajout du codegen à `annotationProcessorPaths` d'arago-server (voie idéale,
+    = pattern de l'IT cervantes). C'est la voie recommandée.
+  - **B.** Corriger Cassini pour propager le `SecurityContext` posé par un filtre `@PreMatching` à
+    l'injection `@Context SecurityContext` → la voie `@Context` (sans CDI) marcherait alors.
+- **En attente** : harnais Keycloak + scénarios 200/403 retirés du repo pour garder l'acceptance verte
+  et rapide (pas de Keycloak démarré pour rien). À réintroduire une fois A ou B fait. `SpeakerAllowlist`
+  (logique d'autorisation) est livré et prêt.
+
 ### ARAGO-001 — `/metrics` non câblé en Phase 0
 - **Date** : 2026-05-30
 - **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics, compteur de rooms
