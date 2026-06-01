@@ -18,6 +18,9 @@ import io.vidocq.tools.arago.rooms.CreatePinRequest;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
 import io.vidocq.tools.arago.rooms.HelpView;
 import io.vidocq.tools.arago.rooms.JoinRequest;
+import io.vidocq.tools.arago.rooms.LayoutCodec;
+import io.vidocq.tools.arago.rooms.LayoutSpec;
+import io.vidocq.tools.arago.rooms.SeatBlock;
 import io.vidocq.tools.arago.rooms.JoinResponse;
 import io.vidocq.tools.arago.rooms.PinGenerator;
 import io.vidocq.tools.arago.rooms.PinView;
@@ -100,8 +103,15 @@ public class RoomResource {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
         RoomMode mode = request.mode() == null ? RoomMode.CONF : request.mode();
+        boolean needsLayout = mode == RoomMode.LAB || mode == RoomMode.HYBRID;
+        if (needsLayout && !isValidLayout(request.layout())) {
+            return Response.status(Response.Status.BAD_REQUEST).build(); // §4.5: LAB/HYBRID needs a BLOCKS layout
+        }
         Room room = new Room(UUID.randomUUID().toString(), pins.next(), request.title().trim(),
                 RoomStatus.ACTIVE, mode, ownerSub, Instant.now());
+        if (needsLayout) {
+            room.setLayoutJson(LayoutCodec.toJson(request.layout()));
+        }
         Room saved = rooms.save(room);
         return Response.status(Response.Status.CREATED).entity(RoomView.of(saved)).build();
     }
@@ -183,6 +193,19 @@ public class RoomResource {
 
         String token = attendeeTokens.issue(room.getId(), pseudo, profileId);
         return Response.ok(new JoinResponse(room.getId(), room.getMode().name(), token, profileId)).build();
+    }
+
+    /** A BLOCKS layout is valid when it has at least one row and one non-empty, positively-sized block. */
+    private static boolean isValidLayout(LayoutSpec layout) {
+        if (layout == null || layout.rows() <= 0 || layout.blocks() == null || layout.blocks().isEmpty()) {
+            return false;
+        }
+        for (SeatBlock b : layout.blocks()) {
+            if (b == null || b.size() <= 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Reuses an attendee profile by email, or creates one; records the consent version + timestamp. */

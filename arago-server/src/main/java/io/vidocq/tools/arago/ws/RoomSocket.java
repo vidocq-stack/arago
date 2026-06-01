@@ -15,7 +15,11 @@ import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
+import io.vidocq.tools.arago.persistence.Seat;
+import io.vidocq.tools.arago.persistence.SeatRepository;
 import io.vidocq.tools.arago.rooms.AttendeeTokens;
+import io.vidocq.tools.arago.rooms.LayoutCodec;
+import io.vidocq.tools.arago.rooms.LayoutSpec;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.json.Json;
@@ -27,6 +31,8 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -72,6 +78,9 @@ public class RoomSocket implements WebSocketHandler {
 
     @Inject
     HelpRequestRepository helpRepo;
+
+    @Inject
+    SeatRepository seatRepo;
 
     /** roomId → open sockets, for broadcast. ConcurrentHashMap + key-set is virtual-thread-safe. */
     private final Map<String, Set<WebSocket>> peers = new ConcurrentHashMap<>();
@@ -124,6 +133,14 @@ public class RoomSocket implements WebSocketHandler {
                 trySend(ws, helpEvent(h));
             }
         }
+        // LAB rooms: push the seating layout, then replay the seats already taken (§4.5 top-down view).
+        LayoutSpec layout = LayoutCodec.fromJson(room.getLayoutJson());
+        if (layout != null) {
+            trySend(ws, layoutEvent(layout));
+            for (Seat s : seatRepo.findByRoomIdAndReleased(room.getId(), false)) {
+                trySend(ws, seatEvent("taken", s));
+            }
+        }
     }
 
     @Override
@@ -137,10 +154,12 @@ public class RoomSocket implements WebSocketHandler {
             return; // malformed frame
         }
         String pseudo = (String) ws.attribute("pseudo");
-        // Inbound frame kind: {"type":"help"|"help-cancel"} for LAB help requests, else a chat message.
+        // Inbound frame kind: LAB seat/help control frames, else a chat message.
         switch (json.getString("type", "chat")) {
             case "help" -> raiseHelp(roomId, pseudo, json);
             case "help-cancel" -> cancelHelp(roomId, pseudo);
+            case "seat" -> claimSeat(ws, roomId, pseudo, json);
+            case "seat-release" -> releaseSeat(roomId, pseudo);
             default -> handleChat(ws, roomId, pseudo, json);
         }
     }
@@ -164,7 +183,11 @@ public class RoomSocket implements WebSocketHandler {
         broadcast(roomId, render(saved));
     }
 
-    /** Attendee raises a "need help" request (§4.5). One active (PENDING/CLAIMED) per attendee. */
+    /**
+     * Attendee raises a "need help" request (§4.5). One active (PENDING/CLAIMED) per attendee. In a
+     * LAB room the request snapshots the attendee's current seat coordinates + a human label, so the
+     * speaker knows where to go even after the attendee later moves or leaves.
+     */
     private void raiseHelp(String roomId, String pseudo, JsonObject json) {
         boolean alreadyActive = helpRepo.findByRoomIdAndAttendeePseudo(roomId, pseudo).stream()
                 .anyMatch(h -> h.getStatus() == HelpStatus.PENDING || h.getStatus() == HelpStatus.CLAIMED);
@@ -175,11 +198,24 @@ public class RoomSocket implements WebSocketHandler {
         if (message != null && message.length() > 140) {
             message = message.substring(0, 140);
         }
+
+        // Resolve the requester's current seat (if any) and render a position label from the layout.
+        Seat seat = activeSeat(roomId, pseudo);
         String position = json.getString("position", null);
-        HelpRequest saved = helpRepo.save(new HelpRequest(
+        if (seat != null) {
+            LayoutSpec layout = roomLayout(roomId);
+            position = seatLabel(layout, seat);
+        }
+
+        HelpRequest help = new HelpRequest(
                 UUID.randomUUID().toString(), roomId, pseudo, position, message,
-                HelpStatus.PENDING, Instant.now()));
-        broadcast(roomId, helpEvent(saved));
+                HelpStatus.PENDING, Instant.now());
+        if (seat != null) {
+            help.setSeatRow(seat.getSeatRow());
+            help.setSeatBlockIndex(seat.getSeatBlockIndex());
+            help.setSeatInBlock(seat.getSeatInBlock());
+        }
+        broadcast(roomId, helpEvent(helpRepo.save(help)));
     }
 
     /** Attendee withdraws their own still-pending request (§4.5). */
@@ -193,6 +229,88 @@ public class RoomSocket implements WebSocketHandler {
         }
     }
 
+    /**
+     * Attendee locks a seat first-come-first-serve (§4.5). Validates the coordinate against the room's
+     * layout, then inserts the hold — the partial unique index {@code ux_seats_active} is the source
+     * of truth, so a lost race surfaces as an insert failure and the attendee is told {@code seat-taken}.
+     * A successful claim releases the attendee's previous seat (a move) and broadcasts both events.
+     */
+    private void claimSeat(WebSocket ws, String roomId, String pseudo, JsonObject json) {
+        LayoutSpec layout = roomLayout(roomId);
+        if (layout == null) {
+            return; // not a LAB room — ignore seat frames
+        }
+        int row = json.getInt("row", -1);
+        int block = json.getInt("block", -1);
+        int seat = json.getInt("seat", -1);
+        if (!layout.isValidSeat(row, block, seat)) {
+            trySend(ws, seatRejected(pseudo, row, block, seat, "invalid-seat"));
+            return;
+        }
+        // App-level pre-check (clean message for the common case); the index is the real guard below.
+        int fRow = row, fBlock = block, fSeat = seat;
+        boolean takenByOther = seatRepo.findByRoomIdAndReleased(roomId, false).stream()
+                .anyMatch(s -> s.getSeatRow() == fRow && s.getSeatBlockIndex() == fBlock
+                        && s.getSeatInBlock() == fSeat && !pseudo.equals(s.getAttendeePseudo()));
+        if (takenByOther) {
+            trySend(ws, seatRejected(pseudo, row, block, seat, "seat-taken"));
+            return;
+        }
+        Seat saved;
+        try {
+            saved = seatRepo.save(new Seat(
+                    UUID.randomUUID().toString(), roomId, pseudo, row, block, seat, Instant.now()));
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.DEBUG, "seat claim lost the unique-index race", e);
+            trySend(ws, seatRejected(pseudo, row, block, seat, "seat-taken"));
+            return;
+        }
+        // Took the new seat: free any prior hold (a move) and broadcast the transitions.
+        for (Seat prior : releaseActiveSeats(roomId, pseudo, saved.getId())) {
+            broadcast(roomId, seatEvent("free", prior));
+        }
+        broadcast(roomId, seatEvent("taken", saved));
+    }
+
+    /** Attendee gives up their seat (§4.5); also called when they leave the room (see {@link #onClose}). */
+    private void releaseSeat(String roomId, String pseudo) {
+        for (Seat freed : releaseActiveSeats(roomId, pseudo, null)) {
+            broadcast(roomId, seatEvent("free", freed));
+        }
+    }
+
+    /** The attendee's current (active) seat in the room, or null if unseated. */
+    private Seat activeSeat(String roomId, String pseudo) {
+        return seatRepo.findByRoomIdAndReleased(roomId, false).stream()
+                .filter(s -> pseudo.equals(s.getAttendeePseudo()))
+                .findFirst().orElse(null);
+    }
+
+    /** Marks the attendee's active seats released (skipping {@code exceptId}); returns those freed. */
+    private List<Seat> releaseActiveSeats(String roomId, String pseudo, String exceptId) {
+        List<Seat> freed = new ArrayList<>();
+        for (Seat s : seatRepo.findByRoomIdAndReleased(roomId, false)) {
+            if (!pseudo.equals(s.getAttendeePseudo()) || (exceptId != null && exceptId.equals(s.getId()))) {
+                continue;
+            }
+            s.setReleased(true);
+            s.setReleasedAt(Instant.now());
+            seatRepo.save(s);
+            freed.add(s);
+        }
+        return freed;
+    }
+
+    private LayoutSpec roomLayout(String roomId) {
+        return rooms.findById(roomId).map(r -> LayoutCodec.fromJson(r.getLayoutJson())).orElse(null);
+    }
+
+    /** Renders a 1-indexed, human-readable seat label, e.g. {@code "R1·Center·S3"}. */
+    private static String seatLabel(LayoutSpec layout, Seat s) {
+        String block = layout == null ? "B" + (s.getSeatBlockIndex() + 1) : layout.blockLabel(s.getSeatBlockIndex());
+        return "R" + (s.getSeatRow() + 1) + "·" + block + "·S" + (s.getSeatInBlock() + 1);
+    }
+
     @Override
     public void onClose(WebSocket ws, int code, String reason) {
         String roomId = (String) ws.attribute("roomId");
@@ -200,6 +318,11 @@ public class RoomSocket implements WebSocketHandler {
             Set<WebSocket> set = peers.get(roomId);
             if (set != null) {
                 set.remove(ws);
+            }
+            // Leaving the room frees the seat (§4.5), so the coordinate becomes available again.
+            String pseudo = (String) ws.attribute("pseudo");
+            if (pseudo != null) {
+                releaseSeat(roomId, pseudo);
             }
         }
     }
@@ -234,13 +357,69 @@ public class RoomSocket implements WebSocketHandler {
 
     /** Renders a help-request WebSocket event ({@code {"type":"help","status":...,...}}). */
     public static String helpEvent(HelpRequest h) {
-        return Json.createObjectBuilder()
+        var b = Json.createObjectBuilder()
                 .add("type", "help")
                 .add("id", h.getId())
                 .add("attendee", h.getAttendeePseudo())
                 .add("position", h.getPosition() == null ? "" : h.getPosition())
                 .add("message", h.getMessage() == null ? "" : h.getMessage())
-                .add("status", h.getStatus() == null ? "" : h.getStatus().name())
+                .add("status", h.getStatus() == null ? "" : h.getStatus().name());
+        if (h.getSeatRow() != null) {
+            b.add("row", h.getSeatRow()).add("block", h.getSeatBlockIndex()).add("seat", h.getSeatInBlock());
+        }
+        return b.build().toString();
+    }
+
+    /** Renders the room's seating layout ({@code {"type":"layout","layout":{...}}}) for the top-down view. */
+    public static String layoutEvent(LayoutSpec layout) {
+        var blocks = Json.createArrayBuilder();
+        if (layout.blocks() != null) {
+            for (var block : layout.blocks()) {
+                blocks.add(Json.createObjectBuilder()
+                        .add("size", block.size())
+                        .add("label", block.label() == null ? "" : block.label()));
+            }
+        }
+        var blocked = Json.createArrayBuilder();
+        if (layout.blockedSeats() != null) {
+            for (var s : layout.blockedSeats()) {
+                blocked.add(Json.createObjectBuilder()
+                        .add("row", s.row()).add("block", s.block()).add("seat", s.seat()));
+            }
+        }
+        return Json.createObjectBuilder()
+                .add("type", "layout")
+                .add("layout", Json.createObjectBuilder()
+                        .add("rows", layout.rows())
+                        .add("blocks", blocks)
+                        .add("stagePos", layout.stagePos() == null ? "TOP" : layout.stagePos())
+                        .add("rowLabels", layout.rowLabels() == null ? "NUMERIC" : layout.rowLabels())
+                        .add("blockedSeats", blocked))
+                .build().toString();
+    }
+
+    /** Renders a seat state change ({@code action} = {@code "taken"} | {@code "free"}). */
+    public static String seatEvent(String action, Seat s) {
+        return Json.createObjectBuilder()
+                .add("type", "seat")
+                .add("action", action)
+                .add("attendee", s.getAttendeePseudo())
+                .add("row", s.getSeatRow())
+                .add("block", s.getSeatBlockIndex())
+                .add("seat", s.getSeatInBlock())
+                .build().toString();
+    }
+
+    /** Renders a rejected seat claim sent only to the requester ({@code reason} explains why). */
+    private static String seatRejected(String pseudo, int row, int block, int seat, String reason) {
+        return Json.createObjectBuilder()
+                .add("type", "seat")
+                .add("action", "rejected")
+                .add("attendee", pseudo)
+                .add("row", row)
+                .add("block", block)
+                .add("seat", seat)
+                .add("reason", reason)
                 .build().toString();
     }
 

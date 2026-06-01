@@ -4,11 +4,11 @@ import io.vidocq.tools.arago.persistence.Room;
 
 /**
  * JSON projection of a {@link Room} returned by the room endpoints (cf. arago-spec §8). Exposes the
- * speaker-facing view: identity, PIN, title, mode, status and timestamps. {@code ownerSub} is
- * intentionally omitted (internal identity).
+ * speaker-facing view: identity, PIN, title, mode, status, timestamps and (for LAB/HYBRID) the
+ * seating {@code layout}. {@code ownerSub} is intentionally omitted (internal identity).
  */
 public record RoomView(String id, String pin, String title, String mode, String status,
-                       String createdAt, String endedAt) {
+                       String createdAt, String endedAt, LayoutSpec layout) {
 
     public static RoomView of(Room r) {
         return new RoomView(
@@ -18,6 +18,7 @@ public record RoomView(String id, String pin, String title, String mode, String 
                 r.getMode() == null ? null : r.getMode().name(),
                 r.getStatus() == null ? null : r.getStatus().name(),
                 r.getCreatedAt() == null ? null : r.getCreatedAt().toString(),
-                r.getEndedAt() == null ? null : r.getEndedAt().toString());
+                r.getEndedAt() == null ? null : r.getEndedAt().toString(),
+                LayoutCodec.fromJson(r.getLayoutJson()));
     }
 }

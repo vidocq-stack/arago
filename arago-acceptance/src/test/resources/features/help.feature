@@ -13,7 +13,7 @@ Feature: LAB help requests
     Given a Keycloak token for user "grace"
     When I POST "/api/rooms" with body:
       """
-      {"title":"Hands-on lab","mode":"LAB"}
+      {"title":"Hands-on lab","mode":"LAB","layout":{"rows":2,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[]}}
       """
     Then the response status is 201
     And I remember "pin" from the JSON field "pin"
@@ -46,7 +46,7 @@ Feature: LAB help requests
     Given a Keycloak token for user "grace"
     When I POST "/api/rooms" with body:
       """
-      {"title":"Anti-spam lab","mode":"LAB"}
+      {"title":"Anti-spam lab","mode":"LAB","layout":{"rows":2,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[]}}
       """
     Then the response status is 201
     And I remember "pin" from the JSON field "pin"

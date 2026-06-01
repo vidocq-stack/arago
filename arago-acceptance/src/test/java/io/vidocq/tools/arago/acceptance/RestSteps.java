@@ -277,10 +277,116 @@ public class RestSteps {
         fail("WebSocket did not receive a message containing '" + needle + "'; received: " + wsMessages);
     }
 
+    // --- Named room WebSockets (LAB layout, slice 5): several attendees connected at once. Each
+    // connection keeps its own received-message buffer so per-attendee frames (e.g. a seat rejection,
+    // sent only to the requester) can be asserted independently of the broadcast frames. ---
+
+    private static final class WsConn {
+        final java.net.http.WebSocket socket;
+        final List<String> messages = Collections.synchronizedList(new ArrayList<>());
+        final StringBuilder frame = new StringBuilder();
+        WsConn(java.net.http.WebSocket socket) { this.socket = socket; }
+    }
+
+    private final java.util.Map<String, WsConn> conns = new java.util.HashMap<>();
+
+    @When("I open room WebSocket {string} with token {string}")
+    public void i_open_named_room_websocket(String name, String tokenVar) throws Exception {
+        String wsBase = AragoApp.baseUrl().replaceFirst("^http", "ws");
+        URI uri = URI.create(wsBase + "/ws/rooms/" + vars.get("pin"));
+        WsConn[] holder = new WsConn[1];
+        java.net.http.WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder()
+                .header("Authorization", "Bearer " + vars.get(tokenVar))
+                .connectTimeout(Duration.ofSeconds(5))
+                .buildAsync(uri, new java.net.http.WebSocket.Listener() {
+                    @Override
+                    public void onOpen(java.net.http.WebSocket webSocket) {
+                        webSocket.request(1);
+                    }
+
+                    @Override
+                    public CompletionStage<?> onText(java.net.http.WebSocket webSocket,
+                                                     CharSequence data, boolean last) {
+                        WsConn c = holder[0];
+                        c.frame.append(data);
+                        if (last) {
+                            c.messages.add(c.frame.toString());
+                            c.frame.setLength(0);
+                        }
+                        webSocket.request(1);
+                        return null;
+                    }
+                })
+                .get(10, TimeUnit.SECONDS);
+        WsConn conn = new WsConn(socket);
+        holder[0] = conn;
+        conns.put(name, conn);
+    }
+
+    @When("on WebSocket {string} I claim seat row {int} block {int} seat {int}")
+    public void on_ws_i_claim_seat(String name, int row, int block, int seat) throws Exception {
+        String frame = "{\"type\":\"seat\",\"row\":" + row + ",\"block\":" + block + ",\"seat\":" + seat + "}";
+        conns.get(name).socket.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
+    @When("on WebSocket {string} I release my seat")
+    public void on_ws_i_release_my_seat(String name) throws Exception {
+        conns.get(name).socket.sendText("{\"type\":\"seat-release\"}", true).get(5, TimeUnit.SECONDS);
+    }
+
+    @When("on WebSocket {string} I send the help request {string}")
+    public void on_ws_i_send_help(String name, String message) throws Exception {
+        String frame = "{\"type\":\"help\",\"message\":\""
+                + message.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        conns.get(name).socket.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
+    @When("I close WebSocket {string}")
+    public void i_close_named_ws(String name) {
+        WsConn c = conns.get(name);
+        if (c != null) {
+            c.socket.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "scenario step");
+        }
+    }
+
+    @Then("WebSocket {string} receives a message containing {string}")
+    public void named_ws_receives_message_containing(String name, String needle) throws Exception {
+        WsConn c = conns.get(name);
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (System.nanoTime() < deadline) {
+            synchronized (c.messages) {
+                for (String m : c.messages) {
+                    if (m.contains(needle)) {
+                        return;
+                    }
+                }
+            }
+            Thread.sleep(50);
+        }
+        fail("WebSocket '" + name + "' did not receive a message containing '" + needle
+                + "'; received: " + c.messages);
+    }
+
+    @Then("WebSocket {string} does not receive a message containing {string}")
+    public void named_ws_does_not_receive(String name, String needle) throws Exception {
+        WsConn c = conns.get(name);
+        // Give any in-flight broadcast a moment to arrive before asserting its absence.
+        Thread.sleep(500);
+        synchronized (c.messages) {
+            for (String m : c.messages) {
+                assertTrue(!m.contains(needle),
+                        () -> "WebSocket '" + name + "' unexpectedly received '" + needle + "': " + c.messages);
+            }
+        }
+    }
+
     @After
     public void closeWebSocket() {
         if (ws != null) {
             ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "scenario end");
+        }
+        for (WsConn c : conns.values()) {
+            c.socket.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "scenario end");
         }
     }
 }

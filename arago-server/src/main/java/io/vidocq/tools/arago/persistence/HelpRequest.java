@@ -45,6 +45,16 @@ public class HelpRequest {
     @Column(name = "claimed_by")
     private String claimedBy;
 
+    /** Seat coordinates snapshotted at raise time (§4.5); null when the requester is unseated. */
+    @Column(name = "seat_row")
+    private Integer seatRow;
+
+    @Column(name = "seat_block_index")
+    private Integer seatBlockIndex;
+
+    @Column(name = "seat_in_block")
+    private Integer seatInBlock;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -83,4 +93,10 @@ public class HelpRequest {
     public void       setCreatedAt(Instant at)      { this.createdAt = at;   }
     public Instant    getUpdatedAt()                { return updatedAt;      }
     public void       setUpdatedAt(Instant at)      { this.updatedAt = at;   }
+    public Integer    getSeatRow()                  { return seatRow;        }
+    public void       setSeatRow(Integer seatRow)   { this.seatRow = seatRow; }
+    public Integer    getSeatBlockIndex()           { return seatBlockIndex; }
+    public void       setSeatBlockIndex(Integer i)  { this.seatBlockIndex = i; }
+    public Integer    getSeatInBlock()              { return seatInBlock;    }
+    public void       setSeatInBlock(Integer seat)  { this.seatInBlock = seat; }
 }

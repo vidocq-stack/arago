@@ -43,6 +43,10 @@ public class Room {
     @Column(nullable = false)
     private RoomMode mode;
 
+    /** BLOCKS seating layout serialized as JSON (cf. arago-spec §4.5); null for CONF rooms. */
+    @Column(name = "layout_json")
+    private String layoutJson;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -75,6 +79,8 @@ public class Room {
     public void       setOwnerSub(String ownerSub)  { this.ownerSub = ownerSub; }
     public RoomMode   getMode()                     { return mode;          }
     public void       setMode(RoomMode mode)        { this.mode = mode;     }
+    public String     getLayoutJson()               { return layoutJson;    }
+    public void       setLayoutJson(String json)    { this.layoutJson = json; }
     public Instant    getCreatedAt()                { return createdAt;     }
     public void       setCreatedAt(Instant at)      { this.createdAt = at;  }
     public Instant    getEndedAt()                  { return endedAt;       }

@@ -87,6 +87,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "heidi",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "heidi@oidc.test",
+      "firstName": "Heidi",
+      "lastName": "Lamarr",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

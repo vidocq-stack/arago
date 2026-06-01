@@ -5,6 +5,24 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
+### ARAGO-007 — Mansart : query dérivée à 5 conditions échoue silencieusement + onText WS avale l'exception
+- **Date** : 2026-06-01 — **Sévérité** : moyenne (observabilité + couverture Jakarta Data)
+- **Contexte** : slice LAB seating (§4.5). Le verrouillage de siège ne diffusait aucun événement ;
+  le client recevait le frame `layout` à l'ouverture puis **plus rien** sur un claim, sans erreur visible.
+- **Cause** : `SeatRepository` exposait
+  `findByRoomIdAndSeatRowAndSeatBlockIndexAndSeatInBlockAndReleased(...)` (And-chain à 5 propriétés,
+  Jakarta Data a priori valide). Le build APT Mansart **passait** mais l'impl générée **jetait au runtime**.
+  L'exception remontait dans `RoomSocket.onText` → **avalée par le handler WebSocket Chappe** (pas de log,
+  socket non fermé) → diagnostic très difficile.
+- **Repro** : une méthode dérivée à ≥4–5 conditions `And` sur une entité Mansart ; appel runtime.
+- **Contournement Arago (légitime, pas un work-around de défaut)** : `SeatRepository` réduit à
+  `findByRoomIdAndReleased(roomId, boolean)` ; filtrage par pseudo/coordonnée **en Java** (sets petits) ;
+  l'index unique partiel `ux_seats_active` reste l'autorité sur « qui occupe une coordonnée ».
+- **À faire upstream** : (1) **Mansart** — soit supporter les And-chains longues, soit **échouer au build**
+  (jamais générer une impl qui jette au runtime) ; tracer dans `mansart/BUG.md` après repro minimal.
+  (2) **Chappe / socle WS Vidocq** — `onText`/`onOpen` ne doivent pas **avaler** une `RuntimeException`
+  silencieusement : au minimum logger (`System.Logger`), idéalement fermer la socket avec un code d'erreur.
+
 ### ARAGO-006 — Console admin servie à `/admin.html`, pas `/admin` (limitation static Chappe)
 - **Date** : 2026-06-01 — **Sévérité** : basse (cosmétique d'URL)
 - **Symptôme** : la console admin (§4.8) est servie à `/admin.html`. Une navigation vers `/admin/`

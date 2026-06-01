@@ -142,15 +142,25 @@ Exemple concret : "10 + 10 + 3 sièges par rangée, 5 rangées" → 3 blocs de t
 
 **Anti-spam** : 1 demande active par attendee à la fois ; cooldown 60 s après résolution.
 
-**État d'implémentation (Phase 1)** : le **flux temps réel** est livré et couvert par `help.feature` —
-`HelpRequest{PENDING|CLAIMED|RESOLVED|CANCELLED}` (table `help_requests`, migration V7), raise/cancel par
-l'attendee sur le WebSocket de room (`{"type":"help"}` / `{"type":"help-cancel"}`), claim/resolve owner-only
-par le speaker (`GET/POST /api/rooms/{id}/help[...]`), diffusion `helpEvent` à toute la room + rejeu des
-demandes actives à la connexion, anti-spam « 1 active par pseudo ». La **position** est pour l'instant un
-champ texte libre optionnel (`position`), **pas** encore résolue depuis un siège.
-Reporté à une slice ultérieure : l'**éditeur de layout BLOCKS**, le **plan top-down** (coloration des sièges),
-la **saisie de position par tap + verrou first-come-first-serve**, et la résolution `(row, blockIndex,
-seatInBlock)` ci-dessus. Le cooldown 60 s n'est pas encore appliqué (seul l'unicité « 1 active » l'est).
+**État d'implémentation (Phase 1)** : couvert par `help.feature` + `layout.feature`.
+- **Flux d'aide temps réel** : `HelpRequest{PENDING|CLAIMED|RESOLVED|CANCELLED}` (table `help_requests`,
+  migrations V7/V8), raise/cancel par l'attendee sur le WebSocket (`{"type":"help"}` / `{"type":"help-cancel"}`),
+  claim/resolve owner-only par le speaker (`GET/POST /api/rooms/{id}/help[...]`), diffusion `helpEvent` +
+  rejeu des demandes actives à la connexion, anti-spam « 1 active par pseudo ».
+- **Layout BLOCKS** : configuré à la création (`POST /api/rooms` body `layout:{rows,blocks[{size,label}],
+  stagePos,rowLabels,blockedSeats}`, requis pour `LAB`/`HYBRID`), stocké en JSON (`rooms.layout_json`),
+  ré-exposé dans `RoomView` et **poussé sur le WebSocket** (`{"type":"layout",...}`) à la connexion.
+- **Verrou de siège first-come-first-serve** : table `seats` + **index unique partiel** `ux_seats_active`
+  (autorité sur l'occupation d'une coordonnée). Claim/release/déplacement sur le WebSocket
+  (`{"type":"seat",row,block,seat}` / `{"type":"seat-release"}`), événements `{"type":"seat","action":
+  "taken"|"free"|"rejected"}`, rejeu des sièges occupés à la connexion, **libération automatique au départ**
+  (`onClose`). La position d'une demande d'aide est désormais **résolue depuis le siège courant**
+  (snapshot `(row, blockIndex, seatInBlock)` + label `R1·Center·S3`).
+
+Reporté à une slice ultérieure : l'**UI top-down** (rendu SVG du plan, coloration des sièges crème/sépia/
+jaune/bordeaux, tap pour s'asseoir, éditeur de layout côté speaker) — le **backend temps réel** ci-dessus est
+prêt à l'alimenter. Le cooldown 60 s post-résolution n'est pas encore appliqué (seule l'unicité « 1 active »
+l'est).
 
 **Hors scope v1** : plans de salle non rectangulaires (théâtres en arc de cercle, salles en U). Si besoin futur, on ajoutera un type `FREE` avec image uploadée — phase 6+.
 
