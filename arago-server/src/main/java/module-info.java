@@ -37,6 +37,8 @@ module io.vidocq.tools.arago.server {
     // MicroProfile JWT (cervantes) — validate Keycloak Bearer tokens; inject JsonWebToken in resources.
     requires io.vidocq.runtime.ext.cervantes.jwt;
     requires org.eclipse.microprofile.jwt;
+    // MicroProfile Metrics (dirac) — @Gauge for the active-rooms metric exposed at /metrics (§12).
+    requires microprofile.metrics.api;
 
     requires io.vidocq.chappe.api;
     requires io.vidocq.vauban.core;
@@ -51,6 +53,7 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.rest;
     opens io.vidocq.tools.arago.rooms;
     opens io.vidocq.tools.arago.ws;
+    opens io.vidocq.tools.arago.metrics;
     opens io.vidocq.tools.arago.admin;
     opens io.vidocq.tools.arago.oidc;
 

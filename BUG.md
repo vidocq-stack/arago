@@ -48,6 +48,8 @@ _(aucun)_
   TCK dirac MP-Metrics 5.1 rejoué après la modif dirac-rest → 127/127.
 - **Note** : endpoint non authentifié (scrape Prometheus ; restreint réseau en prod, cf. spec §4.8/§10.2).
   L'observabilité « détaillée superadmin » (§4.8) reste un raffinement ultérieur.
+- **MAJ 2026-06-01 — §12 fermé** : `@Gauge arago_active_rooms` (`RoomMetrics`, MP Metrics) découvert par
+  dirac au démarrage et exposé sur `/metrics`. Acceptance : le corps `/metrics` contient `arago_active_rooms`.
 
 ### ARAGO-004 — Enforcement OIDC bloqué → 3 défauts cervantes/stack surfacés (décisions upstream)
 - **Date** : 2026-06-01 (diagnostic affiné après investigation complète)

@@ -7,3 +7,8 @@ Feature: Metrics endpoint (MicroProfile Metrics via dirac)
     When I GET "/metrics"
     Then the response status is 200
     And the response body contains "# EOF"
+
+  Scenario: The active-rooms gauge is exposed (§12)
+    When I GET "/metrics"
+    Then the response status is 200
+    And the response body contains "arago_active_rooms"
