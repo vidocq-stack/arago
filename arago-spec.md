@@ -74,6 +74,7 @@ Une room est créée dans l'un des modes ci-dessous (modifiable par le speaker t
 ### 4.2 Authentification
 
 - **Superadmin** : compte technique **local**, **hors OIDC**. Login via `POST /api/admin/login` (body `{username, password}`), comparé en *constant-time* au couple `ARAGO_SUPERADMIN_USER` / `ARAGO_SUPERADMIN_PASSWORD_HASH` (hash **PBKDF2-HMAC-SHA256**, cf. §5/§14). En cas de succès, Arago émet un **JWT signé par Arago** (HS256, même clé/mécanisme que les JWT attendee mais claim `role=superadmin`, `aud=arago-admin`, TTL court ≈ 30 min, non renouvelable silencieusement). Aucune session serveur. Détail des capacités et de la gestion des speakers : §4.8. **Ce flux ne dépend pas de Keycloak** (bootstrap possible Keycloak éteint).
+  - **Transport du token sur l'en-tête `X-Arago-Admin`** (et non `Authorization: Bearer`). Quand l'OIDC est actif, c'est **MicroProfile JWT (cervantes)** qui possède le schéma `Authorization: Bearer` : son filtre `@PreMatching` rejette en `401` **tout** Bearer qu'il ne peut vérifier contre l'issuer Keycloak — ce qui inclurait le token HS256 local du superadmin (2ᵉ émetteur, hors Keycloak). Porter le token superadmin sur un en-tête distinct laisse les **deux autorités d'authentification coexister** : cervantes reste strict/conforme TCK sur le Bearer OIDC, et le token superadmin lui est invisible. Côté serveur, `AdminAuthenticator` lit `X-Arago-Admin` (token brut, préfixe `Bearer ` toléré mais non requis). Cf. `BUG.md` ARAGO-004.
 - **Speakers** : OIDC sur **Keycloak** (`https://keycloak.vidocq.dev`, realm `arago`) **+ allowlist Arago**.
   - Client backend `arago-backend` (confidential, client credentials + token validation MP-JWT).
   - Client front `arago-web` (public, **Authorization Code + PKCE**, redirect URIs whitelistées sur `https://arago.vidocq.dev/*`).
@@ -255,6 +256,7 @@ Le **superadmin** est le seul compte à mot de passe d'Arago. Il sert à **amorc
 - `POST /api/admin/login` : rate-limit strict (5/min/IP, lockout exponentiel après 5 échecs consécutifs), constant-time, aucun message distinguant « user inconnu » de « mauvais mot de passe ».
 - Toutes les actions superadmin sont **auditées** (`AdminAudit` : acteur=`superadmin`, action, cible, timestamp, IP tronquée) — jamais le contenu des secrets ni les mots de passe.
 - JWT superadmin à TTL court, `aud=arago-admin` ; refusé sur les WebSockets de room (le superadmin observe via REST, pas via les hubs attendee).
+- **Transport sur `X-Arago-Admin`**, pas `Authorization: Bearer` (cf. §4.2) : évite le conflit dual-issuer avec le filtre MP-JWT (cervantes) quand l'OIDC est actif. Les endpoints `/api/admin/*` lisent ce seul en-tête ; un Bearer Keycloak sur `Authorization` n'octroie **jamais** de droits superadmin. Vérifié par l'acceptation (`oidc.feature` : admin via `X-Arago-Admin` + `/api/oidc/me` via Bearer Keycloak fonctionnent dans le même boot OIDC).
 - En prod, la console `/admin` est en plus filtrable par réseau (Tailscale / IP allowlist via Caddy) — recommandé, non bloquant.
 
 ---

@@ -29,7 +29,7 @@ public class AdminAuditResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response list(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz) {
+    public Response list(@HeaderParam("X-Arago-Admin") String authz) {
         if (auth.authenticate(authz).isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer").build();

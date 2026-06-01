@@ -42,7 +42,7 @@ public class SpeakerAdminResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response list(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz) {
+    public Response list(@HeaderParam("X-Arago-Admin") String authz) {
         if (auth.authenticate(authz).isEmpty()) {
             return unauthorized();
         }
@@ -53,7 +53,7 @@ public class SpeakerAdminResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response create(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+    public Response create(@HeaderParam("X-Arago-Admin") String authz,
                            @HeaderParam("X-Forwarded-For") String forwardedFor,
                            CreateSpeakerRequest request) {
         if (auth.authenticate(authz).isEmpty()) {
@@ -78,7 +78,7 @@ public class SpeakerAdminResource {
     @Path("/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response update(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+    public Response update(@HeaderParam("X-Arago-Admin") String authz,
                            @HeaderParam("X-Forwarded-For") String forwardedFor,
                            @PathParam("id") String id, UpdateSpeakerRequest request) {
         if (auth.authenticate(authz).isEmpty()) {
@@ -104,7 +104,7 @@ public class SpeakerAdminResource {
 
     @DELETE
     @Path("/{id}")
-    public Response delete(@HeaderParam(HttpHeaders.AUTHORIZATION) String authz,
+    public Response delete(@HeaderParam("X-Arago-Admin") String authz,
                            @HeaderParam("X-Forwarded-For") String forwardedFor,
                            @PathParam("id") String id) {
         if (auth.authenticate(authz).isEmpty()) {

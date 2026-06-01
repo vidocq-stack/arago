@@ -5,6 +5,17 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
+### ARAGO-001 — `/metrics` non câblé en Phase 0
+- **Date** : 2026-05-30
+- **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics, compteur de rooms
+  actives). Aucune extension runtime Vidocq « dirac » (MP Metrics) n'est packagée ; seule
+  `humboldt` (MP Telemetry/OTLP) existe, mais elle n'expose pas un scrape `/metrics` simple et
+  tirerait un exporter OTLP au boot.
+- **Statut** : différé. Décider de l'extension metrics (dirac à intégrer côté runtime, ou exposer
+  un endpoint dédié) avant de cocher le critère §12. Phase 0 livre `/api/health` (knock) seul.
+
+## Résolus
+
 ### ARAGO-004 — Enforcement OIDC bloqué → 3 défauts cervantes/stack surfacés (décisions upstream)
 - **Date** : 2026-06-01 (diagnostic affiné après investigation complète)
 - **Contexte** : Phase 1, I1-O1. `/api/oidc/me` valide un Bearer Keycloak (cervantes/MP-JWT) puis applique
@@ -44,21 +55,20 @@ symptôme, repro, hypothèse, statut.
     vidocq `02d88b5`, + 6 modules (`ravel 36105c6`, `cassini 6f050a6`, `cyrano 1e0a0fc`, `heisenberg e1132b1`, `dirac aeb9ba4`, `humboldt c2c9380`).
   - **(2) FAIT** : `JwtAuthenticationFilter` est inerte si `validator == null` (pas de NPE). **TCK MP-JWT 2.1 : 206/206 PASS.**
   - **Vérifié** : arago **reste vert** (filtre cervantes désormais découvert mais inerte sans `mp.jwt.*` → endpoints superadmin OK).
-- **Reste (3) — design dual-issuer** : seul blocage restant pour l'enforcement OIDC. Quand `mp.jwt.*` EST configuré (chemin
-  OIDC), le filtre rejette en 401 le Bearer HS256 superadmin. Trancher : cervantes *lenient* (Bearer invérifiable → anonyme,
-  enforcement seulement sur `@RolesAllowed`) OU superadmin sur header distinct (`X-Arago-Admin`). Puis **ré-activer** le harnais
-  Keycloak + scénarios `/api/oidc/me` 200/403 (prêts, hors repo ; `SpeakerAllowlist` livré).
-
-### ARAGO-001 — `/metrics` non câblé en Phase 0
-- **Date** : 2026-05-30
-- **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics, compteur de rooms
-  actives). Aucune extension runtime Vidocq « dirac » (MP Metrics) n'est packagée ; seule
-  `humboldt` (MP Telemetry/OTLP) existe, mais elle n'expose pas un scrape `/metrics` simple et
-  tirerait un exporter OTLP au boot.
-- **Statut** : différé. Décider de l'extension metrics (dirac à intégrer côté runtime, ou exposer
-  un endpoint dédié) avant de cocher le critère §12. Phase 0 livre `/api/health` (knock) seul.
-
-## Résolus
+- **MAJ 2026-06-01 — (3) RÉSOLU côté Arago (header distinct, PAS cervantes lenient) :**
+  - **Piste *lenient* écartée** : rendre cervantes tolérant (Bearer invérifiable → anonyme) **casse le TCK MP-JWT 2.1**
+    (`EmptyTokenTest.invalidToken` exige un `401` dur sur token invalide, même endpoint non protégé). cervantes **reste strict**.
+  - **Option retenue — superadmin sur `X-Arago-Admin`** : le token HS256 superadmin quitte `Authorization` pour l'en-tête
+    `X-Arago-Admin`, que le filtre cervantes ignore. `AdminAuthenticator` lit ce seul en-tête (token brut, `Bearer ` toléré) ;
+    `SpeakerAdminResource` + `AdminAuditResource` passent leur `@HeaderParam` à `X-Arago-Admin`. Les deux émetteurs Bearer
+    coexistent : cervantes valide le Bearer Keycloak (OIDC), le superadmin vit hors de son champ.
+  - **OIDC ré-activé** : harnais **Keycloak Testcontainers** (`quay.io/keycloak/keycloak:26.0`, realm `arago` importé,
+    users `ada`/`bob`) reconstruit dans `AragoApp` ; `mp.jwt.verify.issuer`/`publickey.location` injectés au boot ; helper
+    `keycloakToken(user)` (password grant). `oidc.feature` : **401 sans token, 200 speaker provisionné (`ada@oidc.test`),
+    403 non provisionné (`bob`)**.
+  - **Vérifié end-to-end** : `mvn -Pacceptance -pl arago-acceptance -am test -Dcucumber.filter.tags='not @ui'` → **vert**
+    (18 scénarios + 2 smoke), avec OIDC actif (mp.jwt configuré) ET admin via `X-Arago-Admin` dans le **même** boot.
+  - **Statut : RÉSOLU** (les 3 défauts traités). Spec mise à jour : §4.2 (transport `X-Arago-Admin`) + §4.8 (sécurité).
 
 ### ARAGO-002 — `/health` au chemin racine standard (plus sous `/api`)
 - **Date** : 2026-05-30 → résolu 2026-05-31

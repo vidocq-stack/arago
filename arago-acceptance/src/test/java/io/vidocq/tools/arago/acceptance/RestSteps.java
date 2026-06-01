@@ -25,7 +25,9 @@ public class RestSteps {
 
     private final HttpClient http = HttpClient.newHttpClient();
     private HttpResponse<String> response;
-    private String bearer; // scenario-local superadmin token, attached to requests once logged in
+    // Two independent auth tokens carried on distinct headers (see ARAGO-004 / AdminAuthenticator):
+    private String adminToken; // superadmin HS256 token → X-Arago-Admin (ignored by cervantes/MP-JWT)
+    private String bearer;     // Keycloak OIDC token → Authorization: Bearer (validated by cervantes)
 
     // A distinct client IP per scenario (new glue instance), sent as X-Forwarded-For — so the login
     // rate limiter buckets each scenario separately and one scenario's attempts don't throttle another.
@@ -43,8 +45,13 @@ public class RestSteps {
         HttpResponse<String> r = http.send(req, HttpResponse.BodyHandlers.ofString());
         assertEquals(200, r.statusCode(), () -> "login failed: " + r.body());
         try (JsonReader reader = Json.createReader(new StringReader(r.body()))) {
-            bearer = reader.readObject().getString("token");
+            adminToken = reader.readObject().getString("token");
         }
+    }
+
+    @Given("a Keycloak token for user {string}")
+    public void a_keycloak_token_for_user(String username) {
+        bearer = AragoApp.keycloakToken(username);
     }
 
     @When("I GET {string}")
@@ -89,7 +96,13 @@ public class RestSteps {
     }
 
     private HttpRequest.Builder authed(HttpRequest.Builder b) {
-        return bearer == null ? b : b.header("Authorization", "Bearer " + bearer);
+        if (adminToken != null) {
+            b = b.header("X-Arago-Admin", adminToken);
+        }
+        if (bearer != null) {
+            b = b.header("Authorization", "Bearer " + bearer);
+        }
+        return b;
     }
 
     @Then("the response status is {int}")
