@@ -7,6 +7,8 @@ import io.vidocq.chappe.api.WebSocketHandler;
 import io.vidocq.tools.arago.auth.AragoJwt;
 import io.vidocq.tools.arago.persistence.ChatMessage;
 import io.vidocq.tools.arago.persistence.ChatMessageRepository;
+import io.vidocq.tools.arago.persistence.Pin;
+import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
@@ -62,6 +64,9 @@ public class RoomSocket implements WebSocketHandler {
     @Inject
     AttendeeTokens attendeeTokens;
 
+    @Inject
+    PinRepository pinRepo;
+
     /** roomId → open sockets, for broadcast. ConcurrentHashMap + key-set is virtual-thread-safe. */
     private final Map<String, Set<WebSocket>> peers = new ConcurrentHashMap<>();
 
@@ -103,6 +108,10 @@ public class RoomSocket implements WebSocketHandler {
         for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(room.getId())) {
             trySend(ws, render(m));
         }
+        // Replay the current pins (display order) so a joining client sees pinned content (§4.4).
+        for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(room.getId())) {
+            trySend(ws, pinEvent("add", p));
+        }
     }
 
     @Override
@@ -142,7 +151,11 @@ public class RoomSocket implements WebSocketHandler {
         }
     }
 
-    private void broadcast(String roomId, String payload) {
+    /**
+     * Broadcasts a raw JSON payload to every open socket in a room. Public so the REST resources can
+     * push pin add/remove events (see {@link #pinEvent}) to connected clients.
+     */
+    public void broadcast(String roomId, String payload) {
         Set<WebSocket> set = peers.get(roomId);
         if (set == null) {
             return;
@@ -150,6 +163,20 @@ public class RoomSocket implements WebSocketHandler {
         for (WebSocket peer : set) {
             trySend(peer, payload);
         }
+    }
+
+    /** Renders a pin add/remove WebSocket event ({@code {"type":"pin","action":...,"pin":{...}}}). */
+    public static String pinEvent(String action, Pin p) {
+        return Json.createObjectBuilder()
+                .add("type", "pin")
+                .add("action", action)
+                .add("pin", Json.createObjectBuilder()
+                        .add("id", p.getId())
+                        .add("pinType", p.getType() == null ? "" : p.getType().name())
+                        .add("content", p.getContent() == null ? "" : p.getContent())
+                        .add("lang", p.getLang() == null ? "" : p.getLang())
+                        .add("orderIndex", p.getOrderIndex()))
+                .build().toString();
     }
 
     private void trySend(WebSocket ws, String payload) {

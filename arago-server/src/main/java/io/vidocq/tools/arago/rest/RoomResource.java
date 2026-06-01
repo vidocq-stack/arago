@@ -3,16 +3,22 @@ package io.vidocq.tools.arago.rest;
 import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
 import io.vidocq.tools.arago.persistence.AttendeeProfile;
 import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
+import io.vidocq.tools.arago.persistence.Pin;
+import io.vidocq.tools.arago.persistence.PinRepository;
+import io.vidocq.tools.arago.persistence.PinType;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomMode;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
 import io.vidocq.tools.arago.rooms.AttendeeTokens;
+import io.vidocq.tools.arago.rooms.CreatePinRequest;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
 import io.vidocq.tools.arago.rooms.JoinRequest;
 import io.vidocq.tools.arago.rooms.JoinResponse;
 import io.vidocq.tools.arago.rooms.PinGenerator;
+import io.vidocq.tools.arago.rooms.PinView;
 import io.vidocq.tools.arago.rooms.RoomView;
+import io.vidocq.tools.arago.ws.RoomSocket;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -72,6 +78,12 @@ public class RoomResource {
     @Inject
     AttendeeTokens attendeeTokens;
 
+    @Inject
+    PinRepository pinRepo;
+
+    @Inject
+    RoomSocket roomSocket;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -121,6 +133,12 @@ public class RoomResource {
                 room.setStatus(RoomStatus.ENDED);
                 room.setEndedAt(Instant.now());
                 rooms.save(room);
+                // SECRET pins auto-expire at room close (§4.4); never log their content.
+                for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(room.getId())) {
+                    if (p.getType() == PinType.SECRET) {
+                        pinRepo.deleteById(p.getId());
+                    }
+                }
             }
             return Response.ok(RoomView.of(room)).build();
         }).orElseGet(() -> Response.status(Response.Status.NOT_FOUND).build());
@@ -169,6 +187,52 @@ public class RoomResource {
         profile.setConsentTextVersion(consentTextVersion);
         profile.setConsentAt(Instant.now());
         return attendees.save(profile).getId();
+    }
+
+    /**
+     * Pins a content block in a room (cf. arago-spec §4.4). Owner-only. The pin is appended (next
+     * order index) and broadcast to the room's WebSocket peers; a {@code CODE} pin keeps its
+     * {@code lang}. {@code 400} on a missing type/content.
+     */
+    @POST
+    @Path("/{id}/pins")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response createPin(@PathParam("id") String id, CreatePinRequest request) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        if (request == null || request.type() == null
+                || request.content() == null || request.content().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        int order = (int) pinRepo.countByRoomId(id);
+        String lang = request.type() == PinType.CODE ? request.lang() : null;
+        Pin saved = pinRepo.save(new Pin(UUID.randomUUID().toString(), id, request.type(),
+                request.content(), lang, order, Instant.now()));
+        roomSocket.broadcast(id, RoomSocket.pinEvent("add", saved));
+        return Response.status(Response.Status.CREATED).entity(PinView.of(saved)).build();
+    }
+
+    /** Lists a room's pins in display order (owner only). */
+    @GET
+    @Path("/{id}/pins")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listPins(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        List<PinView> views = pinRepo.findByRoomIdOrderByOrderIndexAsc(id)
+                .stream().map(PinView::of).toList();
+        return Response.ok(views).build();
+    }
+
+    /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
+    Room ownedRoomOrAbort(String id, String ownerSub) {
+        Room room = rooms.findById(id)
+                .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        if (!ownerSub.equals(room.getOwnerSub())) {
+            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        }
+        return room;
     }
 
     @GET
