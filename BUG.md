@@ -5,7 +5,15 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
-_(aucun)_
+### ARAGO-006 — Console admin servie à `/admin.html`, pas `/admin` (limitation static Chappe)
+- **Date** : 2026-06-01 — **Sévérité** : basse (cosmétique d'URL)
+- **Symptôme** : la console admin (§4.8) est servie à `/admin.html`. Une navigation vers `/admin/`
+  (sous-dossier) renvoie `net::ERR_ABORTED` — le `StaticFileHandler` de Chappe résout `/` → `index.html`
+  mais **pas** un sous-dossier arbitraire `/<dir>/` → `<dir>/index.html`. Les fichiers root
+  (`privacy.html`, `admin.html`) se servent bien.
+- **Contournement** : entrée Vite `admin.html` (fichier root) → `/admin.html`. Fonctionne, validé @ui.
+- **À faire** : route propre `/admin` — soit SPA-fallback / résolution sous-dossier→index dans le
+  `StaticFileHandler` Chappe, soit un redirect `/admin` → `/admin.html`. Décision à trancher (enhancement Chappe).
 
 ## Résolus
 

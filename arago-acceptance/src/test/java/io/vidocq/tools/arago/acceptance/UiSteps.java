@@ -34,6 +34,23 @@ public class UiSteps {
         assertTrue(page.title().contains(expected), () -> "title was: " + page.title());
     }
 
+    @When("I fill {string} with {string}")
+    public void i_fill_with(String testId, String value) {
+        page.fill("[data-testid='" + testId + "']", value);
+    }
+
+    @When("I click {string}")
+    public void i_click(String testId) {
+        page.click("[data-testid='" + testId + "']");
+    }
+
+    @Then("I see {string}")
+    public void i_see(String text) {
+        // Playwright auto-waits for the element to appear (handles the async fetch/render).
+        page.getByText(text, new Page.GetByTextOptions().setExact(false)).first()
+                .waitFor(new com.microsoft.playwright.Locator.WaitForOptions().setTimeout(5000));
+    }
+
     @After("@ui")
     public void closeBrowser() {
         if (browser != null) {
