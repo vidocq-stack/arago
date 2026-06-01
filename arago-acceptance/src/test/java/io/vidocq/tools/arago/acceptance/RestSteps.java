@@ -219,6 +219,48 @@ public class RestSteps {
         ws.sendText(frame, true).get(5, TimeUnit.SECONDS);
     }
 
+    @When("I send the help request {string}")
+    public void i_send_the_help_request(String message) throws Exception {
+        String frame = "{\"type\":\"help\",\"message\":\""
+                + message.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        ws.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
+    @When("I cancel my help request")
+    public void i_cancel_my_help_request() throws Exception {
+        ws.sendText("{\"type\":\"help-cancel\"}", true).get(5, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Captures a field from the most recent {@code type:help} WebSocket frame (waits up to 5s for one)
+     * — used to remember the server-assigned help id so a later REST claim/resolve can target it.
+     */
+    @Then("I remember {string} from the last help WebSocket message field {string}")
+    public void i_remember_from_last_help_ws_message_field(String name, String field) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        while (System.nanoTime() < deadline) {
+            String latest = null;
+            synchronized (wsMessages) {
+                for (String m : wsMessages) {
+                    try (JsonReader r = Json.createReader(new StringReader(m))) {
+                        JsonObject o = r.readObject();
+                        if ("help".equals(o.getString("type", ""))) {
+                            latest = o.getString(field, null);
+                        }
+                    } catch (RuntimeException ignore) {
+                        // not a JSON frame — skip
+                    }
+                }
+            }
+            if (latest != null) {
+                vars.put(name, latest);
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail("no help WebSocket message carried field '" + field + "'; received: " + wsMessages);
+    }
+
     @Then("the WebSocket receives a message containing {string}")
     public void the_websocket_receives_a_message_containing(String needle) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();

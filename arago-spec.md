@@ -142,6 +142,16 @@ Exemple concret : "10 + 10 + 3 sièges par rangée, 5 rangées" → 3 blocs de t
 
 **Anti-spam** : 1 demande active par attendee à la fois ; cooldown 60 s après résolution.
 
+**État d'implémentation (Phase 1)** : le **flux temps réel** est livré et couvert par `help.feature` —
+`HelpRequest{PENDING|CLAIMED|RESOLVED|CANCELLED}` (table `help_requests`, migration V7), raise/cancel par
+l'attendee sur le WebSocket de room (`{"type":"help"}` / `{"type":"help-cancel"}`), claim/resolve owner-only
+par le speaker (`GET/POST /api/rooms/{id}/help[...]`), diffusion `helpEvent` à toute la room + rejeu des
+demandes actives à la connexion, anti-spam « 1 active par pseudo ». La **position** est pour l'instant un
+champ texte libre optionnel (`position`), **pas** encore résolue depuis un siège.
+Reporté à une slice ultérieure : l'**éditeur de layout BLOCKS**, le **plan top-down** (coloration des sièges),
+la **saisie de position par tap + verrou first-come-first-serve**, et la résolution `(row, blockIndex,
+seatInBlock)` ci-dessus. Le cooldown 60 s n'est pas encore appliqué (seul l'unicité « 1 active » l'est).
+
 **Hors scope v1** : plans de salle non rectangulaires (théâtres en arc de cercle, salles en U). Si besoin futur, on ajoutera un type `FREE` avec image uploadée — phase 6+.
 
 ### 4.6 Mode Conf remote : pilotage de slides reveal.js

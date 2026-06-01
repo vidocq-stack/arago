@@ -75,6 +75,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "grace",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "grace@oidc.test",
+      "firstName": "Grace",
+      "lastName": "Hopper",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

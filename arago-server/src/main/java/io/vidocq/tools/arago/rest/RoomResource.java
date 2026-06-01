@@ -3,6 +3,9 @@ package io.vidocq.tools.arago.rest;
 import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
 import io.vidocq.tools.arago.persistence.AttendeeProfile;
 import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
+import io.vidocq.tools.arago.persistence.HelpRequest;
+import io.vidocq.tools.arago.persistence.HelpRequestRepository;
+import io.vidocq.tools.arago.persistence.HelpStatus;
 import io.vidocq.tools.arago.persistence.Pin;
 import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.PinType;
@@ -13,6 +16,7 @@ import io.vidocq.tools.arago.persistence.RoomStatus;
 import io.vidocq.tools.arago.rooms.AttendeeTokens;
 import io.vidocq.tools.arago.rooms.CreatePinRequest;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
+import io.vidocq.tools.arago.rooms.HelpView;
 import io.vidocq.tools.arago.rooms.JoinRequest;
 import io.vidocq.tools.arago.rooms.JoinResponse;
 import io.vidocq.tools.arago.rooms.PinGenerator;
@@ -80,6 +84,9 @@ public class RoomResource {
 
     @Inject
     PinRepository pinRepo;
+
+    @Inject
+    HelpRequestRepository helpRepo;
 
     @Inject
     RoomSocket roomSocket;
@@ -223,6 +230,78 @@ public class RoomResource {
         List<PinView> views = pinRepo.findByRoomIdOrderByOrderIndexAsc(id)
                 .stream().map(PinView::of).toList();
         return Response.ok(views).build();
+    }
+
+    /**
+     * Lists a room's help requests oldest-first (cf. arago-spec §4.5), owner only. Feeds the speaker
+     * LAB panel; attendees raise/cancel theirs over the WebSocket ({@link RoomSocket}).
+     */
+    @GET
+    @Path("/{id}/help")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listHelp(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        List<HelpView> views = helpRepo.findByRoomIdOrderByCreatedAtAsc(id)
+                .stream().map(HelpView::of).toList();
+        return Response.ok(views).build();
+    }
+
+    /**
+     * Speaker claims a pending help request (PENDING → CLAIMED), recording the owner as handler and
+     * broadcasting the new state to the room. Owner only; {@code 404} if the request is unknown or not
+     * in this room; {@code 409} if it is no longer pending.
+     */
+    @POST
+    @Path("/{id}/help/{helpId}/claim")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response claimHelp(@PathParam("id") String id, @PathParam("helpId") String helpId) {
+        return transitionHelp(id, helpId, HelpStatus.PENDING, HelpStatus.CLAIMED, true);
+    }
+
+    /**
+     * Speaker resolves a help request (PENDING/CLAIMED → RESOLVED) and broadcasts it. Owner only;
+     * {@code 404} if unknown/not in this room; {@code 409} if already RESOLVED/CANCELLED.
+     */
+    @POST
+    @Path("/{id}/help/{helpId}/resolve")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response resolveHelp(@PathParam("id") String id, @PathParam("helpId") String helpId) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        HelpRequest h = helpRepo.findById(helpId)
+                .filter(r -> id.equals(r.getRoomId()))
+                .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        if (h.getStatus() != HelpStatus.PENDING && h.getStatus() != HelpStatus.CLAIMED) {
+            return Response.status(Response.Status.CONFLICT).build();
+        }
+        h.setStatus(HelpStatus.RESOLVED);
+        h.setClaimedBy(ownerSub);
+        h.setUpdatedAt(Instant.now());
+        HelpRequest saved = helpRepo.save(h);
+        roomSocket.broadcast(id, RoomSocket.helpEvent(saved));
+        return Response.ok(HelpView.of(saved)).build();
+    }
+
+    /** Owner-only state transition for a help request, expecting {@code from} and broadcasting {@code to}. */
+    private Response transitionHelp(String id, String helpId, HelpStatus from, HelpStatus to,
+                                    boolean recordHandler) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        HelpRequest h = helpRepo.findById(helpId)
+                .filter(r -> id.equals(r.getRoomId()))
+                .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        if (h.getStatus() != from) {
+            return Response.status(Response.Status.CONFLICT).build();
+        }
+        h.setStatus(to);
+        if (recordHandler) {
+            h.setClaimedBy(ownerSub);
+        }
+        h.setUpdatedAt(Instant.now());
+        HelpRequest saved = helpRepo.save(h);
+        roomSocket.broadcast(id, RoomSocket.helpEvent(saved));
+        return Response.ok(HelpView.of(saved)).build();
     }
 
     /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */

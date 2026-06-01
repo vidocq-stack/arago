@@ -7,6 +7,9 @@ import io.vidocq.chappe.api.WebSocketHandler;
 import io.vidocq.tools.arago.auth.AragoJwt;
 import io.vidocq.tools.arago.persistence.ChatMessage;
 import io.vidocq.tools.arago.persistence.ChatMessageRepository;
+import io.vidocq.tools.arago.persistence.HelpRequest;
+import io.vidocq.tools.arago.persistence.HelpRequestRepository;
+import io.vidocq.tools.arago.persistence.HelpStatus;
 import io.vidocq.tools.arago.persistence.Pin;
 import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.Room;
@@ -67,6 +70,9 @@ public class RoomSocket implements WebSocketHandler {
     @Inject
     PinRepository pinRepo;
 
+    @Inject
+    HelpRequestRepository helpRepo;
+
     /** roomId → open sockets, for broadcast. ConcurrentHashMap + key-set is virtual-thread-safe. */
     private final Map<String, Set<WebSocket>> peers = new ConcurrentHashMap<>();
 
@@ -112,6 +118,12 @@ public class RoomSocket implements WebSocketHandler {
         for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(room.getId())) {
             trySend(ws, pinEvent("add", p));
         }
+        // Replay active help requests (PENDING/CLAIMED) so a joining speaker sees the LAB queue (§4.5).
+        for (HelpRequest h : helpRepo.findByRoomIdOrderByCreatedAtAsc(room.getId())) {
+            if (h.getStatus() == HelpStatus.PENDING || h.getStatus() == HelpStatus.CLAIMED) {
+                trySend(ws, helpEvent(h));
+            }
+        }
     }
 
     @Override
@@ -120,10 +132,22 @@ public class RoomSocket implements WebSocketHandler {
         if (roomId == null) {
             return; // not authenticated (handshake rejected) — ignore
         }
+        JsonObject json = parse(message);
+        if (json == null) {
+            return; // malformed frame
+        }
         String pseudo = (String) ws.attribute("pseudo");
-        String profileId = (String) ws.attribute("profileId");
+        // Inbound frame kind: {"type":"help"|"help-cancel"} for LAB help requests, else a chat message.
+        switch (json.getString("type", "chat")) {
+            case "help" -> raiseHelp(roomId, pseudo, json);
+            case "help-cancel" -> cancelHelp(roomId, pseudo);
+            default -> handleChat(ws, roomId, pseudo, json);
+        }
+    }
 
-        String body = parseBody(message);
+    private void handleChat(WebSocket ws, String roomId, String pseudo, JsonObject json) {
+        String profileId = (String) ws.attribute("profileId");
+        String body = json.getString("body", null);
         if (body == null || body.isBlank()) {
             return;
         }
@@ -131,13 +155,42 @@ public class RoomSocket implements WebSocketHandler {
             body = body.substring(0, MAX_BODY);
         }
         // Only an email-bearing attendee (has a profile) may persist a message (§4.3/§4.7).
-        boolean persistent = parsePersistent(message) && profileId != null;
+        boolean persistent = json.getBoolean("persistent", false) && profileId != null;
         Instant now = Instant.now();
         Instant purgeAfter = persistent ? null : now.plus(ephemeralRetention());
 
         ChatMessage saved = messages.save(new ChatMessage(
                 UUID.randomUUID().toString(), roomId, profileId, pseudo, false, persistent, body, now, purgeAfter));
         broadcast(roomId, render(saved));
+    }
+
+    /** Attendee raises a "need help" request (§4.5). One active (PENDING/CLAIMED) per attendee. */
+    private void raiseHelp(String roomId, String pseudo, JsonObject json) {
+        boolean alreadyActive = helpRepo.findByRoomIdAndAttendeePseudo(roomId, pseudo).stream()
+                .anyMatch(h -> h.getStatus() == HelpStatus.PENDING || h.getStatus() == HelpStatus.CLAIMED);
+        if (alreadyActive) {
+            return; // anti-spam: one active request at a time
+        }
+        String message = json.getString("message", null);
+        if (message != null && message.length() > 140) {
+            message = message.substring(0, 140);
+        }
+        String position = json.getString("position", null);
+        HelpRequest saved = helpRepo.save(new HelpRequest(
+                UUID.randomUUID().toString(), roomId, pseudo, position, message,
+                HelpStatus.PENDING, Instant.now()));
+        broadcast(roomId, helpEvent(saved));
+    }
+
+    /** Attendee withdraws their own still-pending request (§4.5). */
+    private void cancelHelp(String roomId, String pseudo) {
+        for (HelpRequest h : helpRepo.findByRoomIdAndAttendeePseudo(roomId, pseudo)) {
+            if (h.getStatus() == HelpStatus.PENDING) {
+                h.setStatus(HelpStatus.CANCELLED);
+                h.setUpdatedAt(Instant.now());
+                broadcast(roomId, helpEvent(helpRepo.save(h)));
+            }
+        }
     }
 
     @Override
@@ -179,6 +232,18 @@ public class RoomSocket implements WebSocketHandler {
                 .build().toString();
     }
 
+    /** Renders a help-request WebSocket event ({@code {"type":"help","status":...,...}}). */
+    public static String helpEvent(HelpRequest h) {
+        return Json.createObjectBuilder()
+                .add("type", "help")
+                .add("id", h.getId())
+                .add("attendee", h.getAttendeePseudo())
+                .add("position", h.getPosition() == null ? "" : h.getPosition())
+                .add("message", h.getMessage() == null ? "" : h.getMessage())
+                .add("status", h.getStatus() == null ? "" : h.getStatus().name())
+                .build().toString();
+    }
+
     private void trySend(WebSocket ws, String payload) {
         try {
             if (ws.isOpen()) {
@@ -196,16 +261,6 @@ public class RoomSocket implements WebSocketHandler {
             return t.isEmpty() ? null : t;
         }
         return handshake.queryParam("token").filter(t -> !t.isBlank()).orElse(null);
-    }
-
-    private static String parseBody(String message) {
-        JsonObject json = parse(message);
-        return json == null ? null : json.getString("body", null);
-    }
-
-    private static boolean parsePersistent(String message) {
-        JsonObject json = parse(message);
-        return json != null && json.getBoolean("persistent", false);
     }
 
     private static JsonObject parse(String message) {
