@@ -1,11 +1,16 @@
 package io.vidocq.tools.arago.rest;
 
 import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
+import io.vidocq.tools.arago.persistence.AttendeeProfile;
+import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomMode;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
+import io.vidocq.tools.arago.rooms.AttendeeTokens;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
+import io.vidocq.tools.arago.rooms.JoinRequest;
+import io.vidocq.tools.arago.rooms.JoinResponse;
 import io.vidocq.tools.arago.rooms.PinGenerator;
 import io.vidocq.tools.arago.rooms.RoomView;
 import jakarta.enterprise.context.RequestScoped;
@@ -61,6 +66,12 @@ public class RoomResource {
     @Inject
     SpeakerAllowlist allowlist;
 
+    @Inject
+    AttendeeProfileRepository attendees;
+
+    @Inject
+    AttendeeTokens attendeeTokens;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -113,6 +124,51 @@ public class RoomResource {
             }
             return Response.ok(RoomView.of(room)).build();
         }).orElseGet(() -> Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    /**
+     * Public room join (cf. arago-spec §4.2): no authentication. An attendee provides the PIN and a
+     * pseudo (mandatory) and optionally an email (then consent is mandatory). Returns the attendee's
+     * HS256 token + room id/mode. {@code 404} if the PIN matches no joinable (ACTIVE) room;
+     * {@code 400} on a missing pseudo or an email without accepted consent.
+     */
+    @POST
+    @Path("/join")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response join(JoinRequest request) {
+        if (request == null || request.pin() == null || request.pin().isBlank()
+                || request.pseudo() == null || request.pseudo().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        Room room = rooms.findByPin(request.pin().trim()).orElse(null);
+        if (room == null || room.getStatus() != RoomStatus.ACTIVE) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        String pseudo = request.pseudo().trim();
+
+        String profileId = null;
+        if (request.email() != null && !request.email().isBlank()) {
+            if (!Boolean.TRUE.equals(request.consentAccepted())) {
+                return Response.status(Response.Status.BAD_REQUEST).build(); // §4.7: consent required with email
+            }
+            profileId = upsertProfile(request.email().trim().toLowerCase(), pseudo,
+                    request.consentTextVersion());
+        }
+
+        String token = attendeeTokens.issue(room.getId(), pseudo, profileId);
+        return Response.ok(new JoinResponse(room.getId(), room.getMode().name(), token, profileId)).build();
+    }
+
+    /** Reuses an attendee profile by email, or creates one; records the consent version + timestamp. */
+    private String upsertProfile(String email, String pseudo, String consentTextVersion) {
+        AttendeeProfile profile = attendees.findByEmail(email).orElseGet(
+                () -> new AttendeeProfile(UUID.randomUUID().toString(), email, pseudo,
+                        null, null, Instant.now()));
+        profile.setPseudo(pseudo);
+        profile.setConsentTextVersion(consentTextVersion);
+        profile.setConsentAt(Instant.now());
+        return attendees.save(profile).getId();
     }
 
     @GET

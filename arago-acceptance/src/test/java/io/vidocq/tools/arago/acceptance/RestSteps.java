@@ -79,7 +79,7 @@ public class RestSteps {
     public void i_post_with_body(String path, String body) throws Exception {
         HttpRequest req = authed(request(path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .POST(HttpRequest.BodyPublishers.ofString(subst(body)))
                 .build();
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }
@@ -95,7 +95,7 @@ public class RestSteps {
     public void i_patch_with_body(String path, String body) throws Exception {
         HttpRequest req = authed(request(path))
                 .header("Content-Type", "application/json")
-                .method("PATCH", HttpRequest.BodyPublishers.ofString(body))
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(subst(body)))
                 .build();
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }

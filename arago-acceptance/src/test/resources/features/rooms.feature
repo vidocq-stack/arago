@@ -48,3 +48,37 @@ Feature: Room lifecycle (speaker)
     When I POST "/api/rooms/{roomId}/end"
     Then the response status is 200
     And the JSON field "status" is "ENDED"
+
+  Scenario: Attendees join an active room by PIN (pseudo, then email+consent)
+    Given a Keycloak token for user "carol"
+    When I POST "/api/rooms" with body:
+      """
+      {"title":"Joinable","mode":"CONF"}
+      """
+    Then the response status is 201
+    And I remember "pin" from the JSON field "pin"
+    When I POST "/api/rooms/join" with body:
+      """
+      {"pin":"{pin}","pseudo":"Zoe"}
+      """
+    Then the response status is 200
+    And the JSON field "mode" is "CONF"
+    And the JSON field "token" is present
+    When I POST "/api/rooms/join" with body:
+      """
+      {"pin":"{pin}","pseudo":"Yann","email":"yann@oidc.test"}
+      """
+    Then the response status is 400
+    When I POST "/api/rooms/join" with body:
+      """
+      {"pin":"{pin}","pseudo":"Yann","email":"yann@oidc.test","consentAccepted":true,"consentTextVersion":"v1"}
+      """
+    Then the response status is 200
+    And the JSON field "profileId" is present
+
+  Scenario: Joining with an unknown PIN is rejected
+    When I POST "/api/rooms/join" with body:
+      """
+      {"pin":"000000","pseudo":"Nobody"}
+      """
+    Then the response status is 404
