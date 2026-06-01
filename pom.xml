@@ -77,7 +77,7 @@
 
         <!-- Vidocq stack. vauban est épinglé à la release 0.1.0 (Maven Central) ;
              les autres briques sont stabilisées plus tard, encore en SNAPSHOT. -->
-        <vauban.version>0.1.0</vauban.version>
+        <vauban.version>0.2.0-SNAPSHOT</vauban.version>
         <vidocq.runtime.version>0.1.0-SNAPSHOT</vidocq.runtime.version>
         <cassini.version>0.1.0-SNAPSHOT</cassini.version>
         <chappe.version>0.2.0-SNAPSHOT</chappe.version>

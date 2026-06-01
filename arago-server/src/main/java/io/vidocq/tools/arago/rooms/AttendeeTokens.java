@@ -38,6 +38,18 @@ public class AttendeeTokens {
         return verifier.issue(subject, "attendee", AragoJwt.AUDIENCE_ATTENDEE, attendeeTtl(), extra);
     }
 
+    /**
+     * Verifies an attendee token (signature, alg, issuer, {@code aud=arago-attendee}, expiry) and
+     * returns its claims. Throws {@link AragoJwt.InvalidTokenException} on any failure.
+     */
+    public AragoJwt.Claims verify(String token) {
+        AragoJwt verifier = jwt();
+        if (verifier == null) {
+            throw new IllegalStateException("arago.attendee.hmac-secret is not configured");
+        }
+        return verifier.verify(token, AragoJwt.AUDIENCE_ATTENDEE);
+    }
+
     private static Duration attendeeTtl() {
         int roomTtlHours = ConfigProvider.getConfig()
                 .getOptionalValue("arago.room.ttl-hours", Integer.class).orElse(12);

@@ -50,6 +50,7 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.persistence;
     opens io.vidocq.tools.arago.rest;
     opens io.vidocq.tools.arago.rooms;
+    opens io.vidocq.tools.arago.ws;
     opens io.vidocq.tools.arago.admin;
     opens io.vidocq.tools.arago.oidc;
 

@@ -9,6 +9,25 @@ _(aucun)_
 
 ## Résolus
 
+### ARAGO-005 — Phase 1 chat WebSocket : 2 défauts stack révélés + corrigés upstream
+- **Date** : 2026-06-01 → résolu 2026-06-01
+- **Contexte** : tranche 4 (chat over WebSocket, `RoomSocket` monté en `vidocq.http.mount.roomws.type=websocket`).
+  Le chat ne fonctionnait pas ; investigation jusqu'à la cause racine → **2 vrais défauts de la stack**
+  (pas dans Arago — c'est son rôle de les révéler) :
+  1. **Vauban (`VAU-PRX-003`)** — le proxy `_ClientProxy` (APT) émettait un descripteur invalide pour un
+     type de retour **imbriqué** : `AttendeeTokens.verify()` retourne le record imbriqué `AragoJwt.Claims`
+     → proxy `…AragoJwt/Claims` (slash au lieu de `$`) → `NoClassDefFoundError` à l'injection →
+     `RoomResource` (qui injecte `AttendeeTokens`) tombait en 500. Cause : `ElementScanner` utilisait
+     `getQualifiedName()` (canonique) au lieu de `getBinaryName()`. **Fixé dans vauban** + régression.
+  2. **Chappe (`CHAPPE-002`)** — les routes `webSocket(\"/ws/rooms/{pin}\", …)` ne peuplaient pas
+     `pathParams()` dans la `Request` de handshake → `pin` null dans `onOpen` → socket fermé. **Fixé dans
+     chappe** (`WebSocketUpgrade` porte la Request matchée) + régression `WebSocketEchoTest`.
+- **Règle respectée** : **aucun workaround dans Arago**. Les fixes sont dans les composants stack
+  (chappe, vauban). Migration de version : `vauban.version` 0.1.0 → **0.2.0-SNAPSHOT** (0.2.0 = 0.1.0 +
+  fix proxy, sans changement fonctionnel vauban-core) dans vidocq + arago (reste de la stack à migrer).
+- **Vérifié** : acceptance **24/24 verte, sans aucun workaround** (chat WS de bout en bout : handshake
+  token attendee → broadcast + persistance `ChatMessage`). + régressions chappe (6/6 WS) et vauban (APT).
+
 ### ARAGO-001 — `/metrics` câblé via dirac (MP Metrics 5.1) — extension runtime créée
 - **Date** : 2026-05-30 → résolu 2026-06-01
 - **Symptôme** : la spec (§5, §12) demande `/metrics` (MicroProfile Metrics). Aucune extension runtime
