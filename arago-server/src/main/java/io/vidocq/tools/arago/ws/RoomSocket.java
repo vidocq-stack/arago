@@ -243,16 +243,43 @@ public class RoomSocket implements WebSocketHandler {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
+    private static long helpCooldownSeconds() {
+        return ConfigProvider.getConfig()
+                .getOptionalValue("arago.help.cooldown-seconds", Long.class).orElse(60L);
+    }
+
+    /**
+     * True if the attendee resolved a help request within the cooldown window (§4.5) — a new request is
+     * then refused. Only RESOLVED counts (a CANCELLED request is a voluntary withdrawal, no penalty).
+     * Pure and package-visible for unit testing.
+     */
+    static boolean inResolveCooldown(List<HelpRequest> attendeeHelps, Instant now, long cooldownSeconds) {
+        if (cooldownSeconds <= 0) {
+            return false;
+        }
+        for (HelpRequest h : attendeeHelps) {
+            if (h.getStatus() == HelpStatus.RESOLVED && h.getUpdatedAt() != null
+                    && now.isBefore(h.getUpdatedAt().plusSeconds(cooldownSeconds))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Attendee raises a "need help" request (§4.5). One active (PENDING/CLAIMED) per attendee. In a
      * LAB room the request snapshots the attendee's current seat coordinates + a human label, so the
      * speaker knows where to go even after the attendee later moves or leaves.
      */
     private void raiseHelp(String roomId, String pseudo, JsonObject json) {
-        boolean alreadyActive = helpRepo.findByRoomIdAndAttendeePseudo(roomId, pseudo).stream()
+        List<HelpRequest> mine = helpRepo.findByRoomIdAndAttendeePseudo(roomId, pseudo);
+        boolean alreadyActive = mine.stream()
                 .anyMatch(h -> h.getStatus() == HelpStatus.PENDING || h.getStatus() == HelpStatus.CLAIMED);
         if (alreadyActive) {
             return; // anti-spam: one active request at a time
+        }
+        if (inResolveCooldown(mine, Instant.now(), helpCooldownSeconds())) {
+            return; // anti-spam: cooldown window after a resolution (§4.5)
         }
         String message = json.getString("message", null);
         if (message != null && message.length() > 140) {

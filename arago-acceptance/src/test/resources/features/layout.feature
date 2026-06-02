@@ -68,3 +68,37 @@ Feature: LAB seating layout and seat locking
     Then WebSocket "B" receives a message containing "\"action\":\"free\""
     When on WebSocket "B" I claim seat row 0 block 0 seat 1
     Then WebSocket "B" receives a message containing "\"action\":\"taken\""
+
+  Scenario: A speaker edits the layout live (blocks a seat); CONF rooms and invalid layouts are refused
+    Given a Keycloak token for user "heidi"
+    When I POST "/api/rooms" with body:
+      """
+      {"title":"Editable lab","mode":"LAB","layout":{"rows":2,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[]}}
+      """
+    Then the response status is 201
+    And I remember "roomId" from the JSON field "id"
+    When I PUT "/api/rooms/{roomId}/layout" with body:
+      """
+      {"rows":2,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[{"row":0,"block":0,"seat":2}]}
+      """
+    Then the response status is 200
+    And the response body contains "\"seat\":2"
+    When I GET "/api/rooms/{roomId}"
+    Then the response status is 200
+    And the response body contains "\"seat\":2"
+    When I PUT "/api/rooms/{roomId}/layout" with body:
+      """
+      {"rows":0,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[]}
+      """
+    Then the response status is 400
+    When I POST "/api/rooms" with body:
+      """
+      {"title":"Conf no layout","mode":"CONF"}
+      """
+    Then the response status is 201
+    And I remember "confRoomId" from the JSON field "id"
+    When I PUT "/api/rooms/{confRoomId}/layout" with body:
+      """
+      {"rows":2,"blocks":[{"size":4,"label":"Center"}],"stagePos":"TOP","rowLabels":"NUMERIC","blockedSeats":[]}
+      """
+    Then the response status is 409

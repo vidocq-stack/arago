@@ -41,6 +41,12 @@ Feature: LAB help requests
     Then the response status is 200
     And the JSON field "status" is "RESOLVED"
     And the WebSocket receives a message containing "RESOLVED"
+    # Cooldown (§4.5): a re-raise right after a resolution is refused (default 60s window).
+    When I send the help request "too soon"
+    And I GET "/api/rooms/{roomId}/help"
+    Then the response status is 200
+    And the response body does not contain "too soon"
+    And the response body does not contain "PENDING"
 
   Scenario: A second raise while one is active is ignored (anti-spam), and an attendee can cancel
     Given a Keycloak token for user "grace"

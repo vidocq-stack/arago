@@ -316,6 +316,31 @@ public class RoomResource {
     public record ReorderRequest(java.util.List<String> ids) {}
 
     /**
+     * Updates a LAB/HYBRID room's seating layout (owner only, §4.5) — pre-config or live. Re-validates,
+     * persists, and broadcasts the new layout so connected top-down views refresh. Editing
+     * {@code blockedSeats} is how a speaker toggles seats unavailable. A CONF room has no layout (409).
+     * Note: a seat already taken that becomes blocked stays held — blocking only prevents new claims.
+     */
+    @PUT
+    @Path("/{id}/layout")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateLayout(@PathParam("id") String id, LayoutSpec layout) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = ownedRoomOrAbort(id, ownerSub);
+        if (room.getMode() != RoomMode.LAB && room.getMode() != RoomMode.HYBRID) {
+            return Response.status(Response.Status.CONFLICT).build();
+        }
+        if (!isValidLayout(layout)) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        room.setLayoutJson(LayoutCodec.toJson(layout));
+        Room saved = rooms.save(room);
+        roomSocket.broadcast(id, RoomSocket.layoutEvent(layout));
+        return Response.ok(RoomView.of(saved)).build();
+    }
+
+    /**
      * Lists a room's help requests oldest-first (cf. arago-spec §4.5), owner only. Feeds the speaker
      * LAB panel; attendees raise/cancel theirs over the WebSocket ({@link RoomSocket}).
      */
