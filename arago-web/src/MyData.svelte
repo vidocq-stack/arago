@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import Prefs from './lib/Prefs.svelte';
   // RGPD "my data" page (arago-spec §4.7). Landing of the magic link: ?token= is the credential
   // (aud=arago-profile, short-lived). Reads the attendee's profile + persistent messages, lets them
   // export (JSON) or erase everything. No password, ever — the token is the only auth.
@@ -46,6 +47,7 @@
 
 <main>
   <header>
+    <Prefs />
     <h1>Arago</h1>
     <p class="tagline">Mes données</p>
   </header>

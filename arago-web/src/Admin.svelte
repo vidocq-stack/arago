@@ -1,4 +1,5 @@
 <script>
+  import Prefs from './lib/Prefs.svelte';
   // Superadmin console (arago-spec §4.8). Logs in via POST /api/admin/login, then manages the
   // speaker allowlist. The superadmin token rides the X-Arago-Admin header (NOT Authorization:
   // Bearer — that scheme belongs to cervantes/OIDC; cf. ARAGO-004).
@@ -90,6 +91,7 @@
 
 <main class="admin">
   <header>
+    <Prefs />
     <h1>Arago — Console admin</h1>
   </header>
 

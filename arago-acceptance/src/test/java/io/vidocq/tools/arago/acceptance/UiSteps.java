@@ -30,7 +30,13 @@ public class UiSteps {
     public void i_open_the_spa_at(String path) {
         playwright = Playwright.create();
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
-        page = browser.newPage();
+        // Pin the browser locale to French and the colour scheme to light so the page's automatic
+        // detection (navigator.language / prefers-color-scheme, cf. lib/i18n + lib/theme) is deterministic:
+        // the French strings asserted across the suite stay French, and the theme starts light. The Phase 6
+        // prefs scenario then switches language/theme explicitly.
+        page = browser.newPage(new Browser.NewPageOptions()
+                .setLocale("fr-FR")
+                .setColorScheme(com.microsoft.playwright.options.ColorScheme.LIGHT));
         page.navigate(AragoApp.baseUrl() + subst(path));
     }
 
@@ -58,6 +64,15 @@ public class UiSteps {
     @Then("the page title contains {string}")
     public void the_page_title_contains(String expected) {
         assertTrue(page.title().contains(expected), () -> "title was: " + page.title());
+    }
+
+    /** Asserts an attribute on the document root (e.g. {@code lang}, {@code data-theme}) for a11y/theme checks. */
+    @Then("the html {string} attribute is {string}")
+    public void the_html_attribute_is(String name, String expected) {
+        page.waitForCondition(() -> expected.equals(page.getAttribute("html", name)),
+                new Page.WaitForConditionOptions().setTimeout(5000));
+        assertTrue(expected.equals(page.getAttribute("html", name)),
+                () -> name + " was: " + page.getAttribute("html", name));
     }
 
     @When("I fill {string} with {string}")

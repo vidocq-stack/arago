@@ -1,5 +1,7 @@
 <script>
   import { onMount } from 'svelte';
+  import Prefs from './lib/Prefs.svelte';
+  import { t } from './lib/i18n.svelte.js';
   // Attendee SPA (arago-spec §4.2/§4.5): join a room by PIN + pseudo, then — in a LAB room — see the
   // top-down seating plan, tap a free seat to sit (first-come-first-serve, server-authoritative), and
   // raise a "need help" request. All real-time state flows over the room WebSocket (RoomSocket);
@@ -21,10 +23,12 @@
   let speakerToken = $state(null);   // Keycloak access token (in-memory only)
   let oidcError = $state('');
 
-  const OIDC_ERRORS = {
-    speaker_not_provisioned: 'Compte non provisionné — demandez à l’organisateur de vous inviter.',
-    invalid_state: 'Session de connexion expirée, réessayez.',
-    exchange_failed: 'Échec de la connexion OIDC, réessayez.',
+  // OIDC callback error codes mapped to translation keys (resolved at render time so a late
+  // language switch still re-labels the message).
+  const OIDC_ERROR_KEYS = {
+    speaker_not_provisioned: 'oidc.speaker_not_provisioned',
+    invalid_state: 'oidc.invalid_state',
+    exchange_failed: 'oidc.exchange_failed',
   };
 
   function loginAsSpeaker() {
@@ -39,20 +43,20 @@
     // Strip the OIDC query params so a refresh doesn't replay them.
     window.history.replaceState({}, '', window.location.pathname);
     if (err) {
-      oidcError = OIDC_ERRORS[err] || 'Connexion impossible.';
+      oidcError = OIDC_ERROR_KEYS[err] || 'oidc.generic';
       return;
     }
     try {
       const res = await fetch('/api/oidc/token', { method: 'POST' });
-      if (!res.ok) { oidcError = 'Connexion impossible.'; return; }
+      if (!res.ok) { oidcError = 'oidc.generic'; return; }
       const session = await res.json();
       speakerToken = session.accessToken;
       // Prove the token is accepted end-to-end (and resolve the identity) via /api/oidc/me.
       const me = await fetch('/api/oidc/me', { headers: { Authorization: `Bearer ${speakerToken}` } });
-      if (!me.ok) { oidcError = 'Connexion impossible.'; return; }
+      if (!me.ok) { oidcError = 'oidc.generic'; return; }
       speaker = await me.json();
     } catch {
-      oidcError = 'Connexion impossible.';
+      oidcError = 'oidc.generic';
     }
   }
 
@@ -82,7 +86,7 @@
         body: JSON.stringify({ pin: pinDigits, pseudo: pseudo.trim() }),
       });
       if (!res.ok) {
-        joinError = res.status === 404 ? 'Room introuvable ou fermée' : 'Impossible de rejoindre';
+        joinError = res.status === 404 ? 'join.notfound' : 'join.failed';
         return;
       }
       const data = await res.json();
@@ -92,7 +96,7 @@
       connect();
       view = 'room';
     } catch {
-      joinError = 'Impossible de rejoindre';
+      joinError = 'join.failed';
     }
   }
 
@@ -132,9 +136,9 @@
         mySeat = null;
       }
     } else if (m.action === 'rejected' && m.attendee === myPseudo) {
-      notice = m.reason === 'seat-taken' ? 'Cette place vient d’être prise.'
-             : m.reason === 'invalid-seat' ? 'Place invalide.'
-             : 'Place indisponible.';
+      notice = m.reason === 'seat-taken' ? 'seat.taken'
+             : m.reason === 'invalid-seat' ? 'seat.invalid'
+             : 'seat.unavailable';
     }
   }
 
@@ -214,57 +218,62 @@
 
 <main>
   <header>
+    <Prefs />
     <h1>Arago</h1>
-    <p class="tagline">Speaker &amp; Lab Companion</p>
+    <p class="tagline">{t('tagline')}</p>
   </header>
 
   {#if view === 'join'}
     <form class="join-card" onsubmit={join} data-testid="join-form">
-      <label for="pin">Code de la room</label>
+      <label for="pin">{t('join.pin')}</label>
       <input id="pin" data-testid="join-pin" inputmode="numeric" autocomplete="off"
              placeholder="123456" maxlength="6" bind:value={pin} />
-      <label for="pseudo">Votre pseudo</label>
+      <label for="pseudo">{t('join.pseudo')}</label>
       <input id="pseudo" data-testid="join-pseudo" autocomplete="off" placeholder="Ada"
              bind:value={pseudo} />
-      <button type="submit" data-testid="join-submit" disabled={!canJoin}>Rejoindre</button>
-      {#if joinError}<p class="error" data-testid="join-error">{joinError}</p>{/if}
-      <p class="hint">Pas de compte, pas d'installation — juste le PIN affiché à l'écran.</p>
+      <button type="submit" data-testid="join-submit" disabled={!canJoin}>{t('join.submit')}</button>
+      {#if joinError}<p class="error" data-testid="join-error">{t(joinError)}</p>{/if}
+      <p class="hint">{t('join.hint')}</p>
     </form>
 
     <div class="speaker-box" data-testid="speaker-box">
       {#if speaker}
         <p class="speaker-id" data-testid="speaker-identity">
-          Connecté : {speaker.email} ({speaker.role})
+          {t('speaker.connected', { email: speaker.email, role: speaker.role })}
         </p>
       {:else}
-        <p class="hint">Vous êtes speaker ?</p>
+        <p class="hint">{t('speaker.are-you')}</p>
         <button type="button" class="ghost" data-testid="speaker-login" onclick={loginAsSpeaker}>
-          Se connecter (Keycloak)
+          {t('speaker.login')}
         </button>
-        {#if oidcError}<p class="error" data-testid="oidc-error">{oidcError}</p>{/if}
+        {#if oidcError}<p class="error" data-testid="oidc-error">{t(oidcError)}</p>{/if}
       {/if}
     </div>
   {:else}
     <section class="room" data-testid="room">
       <div class="bar">
-        <span class="mode">{roomMode === 'LAB' || roomMode === 'HYBRID' ? 'Atelier' : 'Conférence'}</span>
+        <span class="mode">{roomMode === 'LAB' || roomMode === 'HYBRID' ? t('room.workshop') : t('room.conference')}</span>
         {#if mySeat}
           <span class="seatlbl" data-testid="my-seat-label">
-            Place : R{mySeat.row + 1} · {layout?.blocks?.[mySeat.block]?.label || 'B' + (mySeat.block + 1)} · S{mySeat.seat + 1}
+            {t('room.seat', {
+              row: mySeat.row + 1,
+              block: layout?.blocks?.[mySeat.block]?.label || 'B' + (mySeat.block + 1),
+              seat: mySeat.seat + 1,
+            })}
           </span>
         {:else if geom}
-          <span class="seatlbl" data-testid="my-seat-label">Choisissez une place</span>
+          <span class="seatlbl" data-testid="my-seat-label">{t('room.pick-seat')}</span>
         {/if}
       </div>
 
-      {#if notice}<p class="notice" data-testid="notice">{notice}</p>{/if}
-      {#if revealFollow}<p class="follow" data-testid="reveal-follow">Slide en cours : {revealFollow}</p>{/if}
+      {#if notice}<p class="notice" data-testid="notice">{t(notice)}</p>{/if}
+      {#if revealFollow}<p class="follow" data-testid="reveal-follow">{t('room.reveal-follow', { slide: revealFollow })}</p>{/if}
 
       {#if geom}
         <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
-             width={geom.width} height={geom.height} role="group" aria-label="Plan de la salle">
+             width={geom.width} height={geom.height} role="group" aria-label={t('room.map-aria')}>
           <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
-          <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">Scène</text>
+          <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">{t('room.stage')}</text>
 
           {#each geom.blockLabels as bl}
             <text class="block-lbl" x={bl.x} y={PAD + STAGE + 8} text-anchor="middle">{bl.label}</text>
@@ -284,30 +293,30 @@
         </svg>
 
         <div class="legend">
-          <span><i class="sw free"></i> libre</span>
-          <span><i class="sw occupied"></i> occupé</span>
-          <span><i class="sw mine"></i> vous</span>
-          <span><i class="sw blocked"></i> indispo.</span>
+          <span><i class="sw free"></i> {t('legend.free')}</span>
+          <span><i class="sw occupied"></i> {t('legend.occupied')}</span>
+          <span><i class="sw mine"></i> {t('legend.mine')}</span>
+          <span><i class="sw blocked"></i> {t('legend.blocked')}</span>
         </div>
 
         <div class="help">
           {#if helpActive}
             <span class="help-status" data-testid="help-status">
-              {myHelp === 'CLAIMED' ? 'Un speaker arrive…' : 'Aide demandée'}
+              {myHelp === 'CLAIMED' ? t('help.coming') : t('help.requested')}
             </span>
-            <button class="ghost" data-testid="help-cancel" onclick={cancelHelp}>Annuler</button>
+            <button class="ghost" data-testid="help-cancel" onclick={cancelHelp}>{t('help.cancel')}</button>
           {:else}
-            <button class="help-btn" data-testid="help-button" onclick={raiseHelp}>Besoin d'aide</button>
+            <button class="help-btn" data-testid="help-button" onclick={raiseHelp}>{t('help.need')}</button>
           {/if}
         </div>
       {:else}
-        <p class="hint" data-testid="no-layout">Cette salle n'a pas de plan (mode conférence).</p>
+        <p class="hint" data-testid="no-layout">{t('room.no-layout')}</p>
       {/if}
     </section>
   {/if}
 
   <footer>
-    <a href="/privacy.html">Confidentialité</a>
+    <a href="/privacy.html">{t('footer.privacy')}</a>
   </footer>
 </main>
 
@@ -326,7 +335,7 @@
   .tagline { margin: 0.2rem 0 0; color: var(--arago-gold); font-style: italic; }
 
   .join-card {
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--arago-surface);
     border: 1px solid var(--arago-gold);
     border-radius: 0.75rem;
     padding: 1.5rem;
@@ -346,8 +355,8 @@
     font: inherit; font-weight: 700; padding: 0.7rem 1rem; border: none;
     border-radius: 0.5rem; background: var(--arago-bordeaux); color: var(--arago-cream); cursor: pointer;
   }
-  button:disabled { background: var(--arago-paper); color: rgba(26, 20, 16, 0.4); cursor: not-allowed; }
-  .hint { margin: 0; font-size: 0.85rem; color: rgba(26, 20, 16, 0.7); }
+  button:disabled { background: var(--arago-paper); color: var(--arago-muted); cursor: not-allowed; }
+  .hint { margin: 0; font-size: 0.85rem; color: var(--arago-muted); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
 
   .speaker-box {
@@ -371,25 +380,25 @@
 
   .map {
     max-width: 100%; height: auto;
-    background: rgba(255, 255, 255, 0.4);
+    background: var(--arago-surface);
     border: 1px solid var(--arago-gold); border-radius: 0.6rem;
   }
   .stage { fill: var(--arago-ink); opacity: 0.85; }
   .stage-txt { fill: var(--arago-cream); font-size: 12px; letter-spacing: 0.2em; }
   .block-lbl { fill: var(--arago-bordeaux); font-size: 11px; font-weight: 700; }
-  .row-lbl { fill: rgba(26, 20, 16, 0.6); font-size: 12px; }
+  .row-lbl { fill: var(--arago-muted); font-size: 12px; }
 
-  .seat { stroke: rgba(26, 20, 16, 0.25); stroke-width: 1; cursor: pointer; }
+  .seat { stroke: var(--arago-line); stroke-width: 1; cursor: pointer; }
   .seat.free { fill: var(--arago-cream); }
-  .seat.free:hover { fill: #fff6e2; }
-  .seat.occupied { fill: var(--arago-paper); stroke: rgba(26, 20, 16, 0.4); cursor: not-allowed; }
+  .seat.free:hover { fill: var(--arago-paper); }
+  .seat.occupied { fill: var(--arago-paper); stroke: var(--arago-line); cursor: not-allowed; }
   .seat.blocked { fill: #b9b2a3; cursor: not-allowed; }
   .seat.mine { fill: var(--arago-bordeaux); stroke: var(--arago-ink); }
   .seat.mine-help { fill: var(--arago-gold); stroke: var(--arago-bordeaux); stroke-width: 2; }
 
   .legend { display: flex; gap: 1rem; font-size: 0.8rem; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
-  .sw { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid rgba(26, 20, 16, 0.3); }
+  .sw { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid var(--arago-line); }
   .sw.free { background: var(--arago-cream); }
   .sw.occupied { background: var(--arago-paper); }
   .sw.mine { background: var(--arago-bordeaux); }

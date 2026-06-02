@@ -1,5 +1,8 @@
-/* Palette Empire sépia/bordeaux/crème — figée en Phase 0 (cf. arago-spec §5). */
-:root {
+/* Palette Empire sépia/bordeaux/crème — figée en Phase 0 (cf. arago-spec §5), déclinée clair/sombre
+   en Phase 6 (§11). Le thème est porté par <html data-theme="light|dark"> (cf. lib/theme.svelte.js) ;
+   tout le style consomme ces variables pour basculer sans dupliquer les règles. */
+:root,
+[data-theme='light'] {
   --arago-ink:      #1a1410; /* noir sépia */
   --arago-cream:    #f4ead5; /* fond crème */
   --arago-paper:    #ece1c4; /* fond papier */
@@ -8,6 +11,26 @@
   --arago-success:  #2f6b3b;
   --arago-warn:     #c9722b;
   --arago-danger:   #8b1a1a;
+  /* Theme-aware neutrals (replace hard-coded rgba so dark mode adapts). */
+  --arago-surface:       rgba(255, 255, 255, 0.45);
+  --arago-surface-solid: var(--arago-cream);
+  --arago-line:          rgba(26, 20, 16, 0.25);
+  --arago-muted:         rgba(26, 20, 16, 0.7);
+}
+
+[data-theme='dark'] {
+  --arago-ink:      #f4ead5; /* texte clair sur fond sombre */
+  --arago-cream:    #1a1410; /* fond sombre */
+  --arago-paper:    #2a2018;
+  --arago-bordeaux: #d98c97; /* éclairci pour le contraste AA sur fond sombre */
+  --arago-gold:     #d8a531;
+  --arago-success:  #6fbf7f;
+  --arago-warn:     #e0975a;
+  --arago-danger:   #e57373;
+  --arago-surface:       rgba(255, 255, 255, 0.06);
+  --arago-surface-solid: #241b14;
+  --arago-line:          rgba(244, 234, 213, 0.25);
+  --arago-muted:         rgba(244, 234, 213, 0.7);
 }
 
 * {
@@ -26,4 +49,11 @@ body {
   color: var(--arago-ink);
   background:
     radial-gradient(circle at 50% -10%, var(--arago-paper), var(--arago-cream) 60%);
+}
+
+/* Visible keyboard focus for accessibility (a11y AA) — applies to every interactive element,
+   including the SVG seats (role="button" tabindex="0"). */
+:focus-visible {
+  outline: 3px solid var(--arago-gold);
+  outline-offset: 2px;
 }

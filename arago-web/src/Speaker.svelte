@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import Prefs from './lib/Prefs.svelte';
   // Speaker console (arago-spec §9). OIDC login (return=/speaker), "my rooms" list + create, and per
   // room: a LIVE top-down view (observer token → room WebSocket), the help queue (claim/resolve), a
   // layout editor (toggle blocked seats → PUT layout), pins (add/list/reorder DnD/delete), and
@@ -320,6 +321,7 @@
 
 <main>
   <header>
+    <Prefs />
     <h1>Arago</h1>
     <p class="tagline">Console speaker</p>
   </header>
