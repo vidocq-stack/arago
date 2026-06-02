@@ -48,9 +48,18 @@ Feature: Room lifecycle (speaker)
     When I GET "/api/rooms/{roomId}"
     Then the response status is 200
     And the JSON field "title" is "Carol's Talk"
+    # Observer token (speaker console live view): owner gets a token + the room PIN.
+    When I POST "/api/rooms/{roomId}/observer-token"
+    Then the response status is 200
+    And the JSON field "token" is present
+    And the JSON field "pin" is present
     When I POST "/api/rooms/{roomId}/end"
     Then the response status is 200
     And the JSON field "status" is "ENDED"
+
+  Scenario: The observer token requires a speaker token
+    When I POST "/api/rooms/any/observer-token"
+    Then the response status is 401
 
   Scenario: Attendees join an active room by PIN (pseudo, then email+consent)
     Given a Keycloak token for user "carol"

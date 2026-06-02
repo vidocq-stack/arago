@@ -24,8 +24,11 @@ import java.util.function.LongSupplier;
 @ApplicationScoped
 public class OidcFlowStore {
 
-    /** Pending login: the PKCE verifier and nonce bound to a {@code state}, with its creation instant. */
-    public record Login(String codeVerifier, String nonce, long createdAtMillis) {}
+    /**
+     * Pending login: the PKCE verifier and nonce bound to a {@code state}, the post-login return path
+     * (a sanitized local path, default {@code /}), and the creation instant.
+     */
+    public record Login(String codeVerifier, String nonce, String returnPath, long createdAtMillis) {}
 
     /** One-time hand-off of the resolved access token + speaker identity to the SPA. */
     public record Ticket(String accessToken, String role, String email, long createdAtMillis) {}
@@ -47,9 +50,9 @@ public class OidcFlowStore {
     }
 
     /** Registers a pending login keyed by {@code state}; returns nothing — call {@link #consumeLogin}. */
-    public void putLogin(String state, String codeVerifier, String nonce) {
+    public void putLogin(String state, String codeVerifier, String nonce, String returnPath) {
         purge();
-        logins.put(state, new Login(codeVerifier, nonce, clock.getAsLong()));
+        logins.put(state, new Login(codeVerifier, nonce, returnPath, clock.getAsLong()));
     }
 
     /** Atomically removes and returns the login for {@code state}, or empty if absent/expired. */

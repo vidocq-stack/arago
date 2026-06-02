@@ -19,6 +19,7 @@ export default defineConfig({
         main: 'index.html',
         admin: 'admin.html',
         mydata: 'mes-donnees.html',
+        speaker: 'speaker.html',
       },
     },
   },

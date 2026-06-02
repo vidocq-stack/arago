@@ -16,7 +16,7 @@ class OidcFlowStoreTest {
 
     @Test
     void loginIsConsumedExactlyOnce() {
-        store.putLogin("state-1", "verifier-1", "nonce-1");
+        store.putLogin("state-1", "verifier-1", "nonce-1", "/");
 
         var first = store.consumeLogin("state-1");
         assertTrue(first.isPresent());
@@ -29,7 +29,7 @@ class OidcFlowStoreTest {
 
     @Test
     void expiredLoginIsRejected() {
-        store.putLogin("state-2", "v", "n");
+        store.putLogin("state-2", "v", "n", "/");
         now.addAndGet(OidcFlowStore.LOGIN_TTL_MS + 1);
         assertTrue(store.consumeLogin("state-2").isEmpty());
     }
@@ -62,7 +62,7 @@ class OidcFlowStoreTest {
 
     @Test
     void loginAndTicketAreSeparateNamespaces() {
-        store.putLogin("shared-key", "v", "n");
+        store.putLogin("shared-key", "v", "n", "/");
         // A ticket id is server-generated, but even a collision on the key space must not cross over.
         assertFalse(store.consumeTicket("shared-key").isPresent());
         assertTrue(store.consumeLogin("shared-key").isPresent());

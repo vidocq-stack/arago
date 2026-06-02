@@ -53,12 +53,21 @@ public class OidcLoginResource {
 
     @GET
     @Path("/login")
-    public Response login() {
+    public Response login(@QueryParam("return") String returnPath) {
         Pkce.Pair pkce = Pkce.generate();
         String state = Pkce.randomUrlToken(24);
         String nonce = Pkce.randomUrlToken(24);
-        flow.putLogin(state, pkce.verifier(), nonce);
+        flow.putLogin(state, pkce.verifier(), nonce, sanitizeReturn(returnPath));
         return redirect(keycloak.authorizeUrl(state, nonce, pkce.challenge()));
+    }
+
+    /** A safe local return path (leading "/", no protocol-relative "//" or scheme) or "/" by default. */
+    private static String sanitizeReturn(String returnPath) {
+        if (returnPath == null || !returnPath.startsWith("/") || returnPath.startsWith("//")
+                || returnPath.contains("://")) {
+            return "/";
+        }
+        return returnPath;
     }
 
     @GET
@@ -82,10 +91,11 @@ public class OidcLoginResource {
             return redirect("/?oidc_error=exchange_failed");
         }
 
+        String returnPath = login.get().returnPath();
         JsonObject claims = JwtPayload.of(accessToken);
         var speaker = allowlist.authorize(JwtPayload.email(claims), JwtPayload.subject(claims));
         if (speaker.isEmpty()) {
-            return redirect("/?oidc_error=speaker_not_provisioned");
+            return redirect(returnPath + "?oidc_error=speaker_not_provisioned");
         }
 
         String ticket = flow.putTicket(
@@ -99,7 +109,7 @@ public class OidcLoginResource {
                 .sameSite(NewCookie.SameSite.LAX)
                 .build();
         return Response.status(Response.Status.FOUND)
-                .header(HttpHeaders.LOCATION, "/?login=ok")
+                .header(HttpHeaders.LOCATION, returnPath + "?login=ok")
                 .cookie(cookie)
                 .build();
     }

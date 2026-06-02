@@ -461,6 +461,25 @@ public class RoomResource {
     /** Moderation outcome: the target pseudo + how many of their open sockets were affected. */
     public record ModerationResult(String pseudo, int affected) {}
 
+    /**
+     * Mints a short-lived observer token (owner only) so the speaker console can watch its own room's
+     * WebSocket (layout/seats/pins/help) live. Reuses the attendee token scheme ({@code aud=arago-attendee})
+     * — the console connects read-only and never claims a seat; the native speaker (RS256) WS is a later
+     * refinement. Returns the token and the room PIN to build the {@code /ws/rooms/{pin}} URL.
+     */
+    @POST
+    @Path("/{id}/observer-token")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response observerToken(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = ownedRoomOrAbort(id, ownerSub);
+        String token = attendeeTokens.issue(room.getId(), "speaker", null);
+        return Response.ok(new ObserverToken(token, room.getPin())).build();
+    }
+
+    /** Observer token + room PIN for the speaker console's live WebSocket. */
+    public record ObserverToken(String token, String pin) {}
+
     /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
     Room ownedRoomOrAbort(String id, String ownerSub) {
         Room room = rooms.findById(id)

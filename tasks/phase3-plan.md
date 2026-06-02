@@ -16,11 +16,18 @@
 - Tests : unit `HelpCooldownTest` ; acceptance `layout.feature` (PUT 200/400/409) + `help.feature`
   (re-raise post-resolve bloqué). Vert : unit + acceptance **43/43**. Pas de migration.
 
-## Reste Phase 3 — console speaker (UI dédiée, différée)
-Vue top-down **speaker** + file d'aide priorisée + claim/resolve depuis la carte + UI éditeur de layout
-(toggle sièges) → nouvelle entrée Svelte « console speaker » (OIDC) + test @ui. Gros incrément UI qui
-débloque aussi : pin reorder drag&drop, cartes preview OG, actions modération. Aucune console speaker
-n'existe encore (seules SPA attendee + console superadmin + page « Mes données »).
+## Console speaker — LIVRÉE 2026-06-02 (complète)
+Page Svelte `speaker.html` servie à **`/speaker`** (cleanUrls) : login OIDC (retour `/speaker`), « mes
+rooms » + création (CONF/LAB) + terminer, et par room — **vue top-down live** (token observateur → WS
+attendee read-only), **file d'aide** claim/resolve, **éditeur de layout** (toggle sièges → PUT), **pins**
+(ajout/liste/**reorder DnD**/suppression), **modération** mute/kick.
+- Enablers backend : retour OIDC paramétrable (`/api/oidc/login?return=/speaker`, sanitize local-path) ;
+  `POST /api/rooms/{id}/observer-token` (owner-only → token aud=attendee + pin) pour le WS observateur.
+- `Speaker.svelte` réutilise la géométrie top-down d'`App.svelte`.
+- Tests : `observer-token` (acceptance rooms.feature, 200 + 401) ; **@ui `speaker-console.feature`**
+  (login `/speaker` → créer room ; + room LAB REST → demande d'aide attendee → console resolve). Vert :
+  non-@ui **44/44**, **@ui 8/8**.
+- NB : le WS speaker RS256 natif reste différé (observateur via token attendee en attendant).
 
 ## Différés transverses (rappel)
 Modération superadmin, persistance état modération, durcissement TOCTOU preview, `SmtpMailer` réel,
