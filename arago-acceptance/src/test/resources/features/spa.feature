@@ -7,7 +7,8 @@ Feature: Single-page app is served
     Then the page title contains "Arago"
 
   Scenario: Superadmin logs into the admin console and invites a speaker
-    When I open the SPA at "/admin.html"
+    # Clean URL (no .html suffix) — Chappe cleanUrls resolves /admin to admin.html (ARAGO-006).
+    When I open the SPA at "/admin"
     Then the page title contains "Admin"
     When I fill "login-username" with "root"
     And I fill "login-password" with "correct-horse-battery"

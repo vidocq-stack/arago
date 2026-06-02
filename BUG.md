@@ -5,17 +5,25 @@ symptôme, repro, hypothèse, statut.
 
 ## Ouverts
 
-### ARAGO-006 — Console admin servie à `/admin.html`, pas `/admin` (limitation static Chappe)
-- **Date** : 2026-06-01 — **Sévérité** : basse (cosmétique d'URL)
-- **Symptôme** : la console admin (§4.8) est servie à `/admin.html`. Une navigation vers `/admin/`
-  (sous-dossier) renvoie `net::ERR_ABORTED` — le `StaticFileHandler` de Chappe résout `/` → `index.html`
-  mais **pas** un sous-dossier arbitraire `/<dir>/` → `<dir>/index.html`. Les fichiers root
-  (`privacy.html`, `admin.html`) se servent bien.
-- **Contournement** : entrée Vite `admin.html` (fichier root) → `/admin.html`. Fonctionne, validé @ui.
-- **À faire** : route propre `/admin` — soit SPA-fallback / résolution sous-dossier→index dans le
-  `StaticFileHandler` Chappe, soit un redirect `/admin` → `/admin.html`. Décision à trancher (enhancement Chappe).
+_(aucun)_
 
 ## Résolus
+
+### ARAGO-006 — Console admin servie à `/admin.html`, pas `/admin` (limitation static Chappe)
+- **Date** : 2026-06-01 → **résolu upstream 2026-06-02** (enhancement dans Chappe, pas de contournement Arago)
+- **Symptôme** : la console admin (§4.8) n'était servie qu'à `/admin.html` ; `/admin` (et `/admin/`)
+  renvoyait 404 — le `StaticFileHandler` Chappe résolvait répertoire→`index.html` mais pas une URL
+  propre sans extension vers un fichier-entrée `.html` racine (l'admin est une entrée multi-page Vite
+  buildée en `static/admin.html`).
+- **Corrigé upstream — Chappe `StaticFileHandler.cleanUrls`** : nouvelle option « clean/pretty URLs »
+  (style GitHub Pages/Netlify) — une requête sans extension (`/admin`, `/admin/`) est résolue vers son
+  sibling `.html` (`admin.html`) quand aucun fichier/index ne matche ; les chemins déjà suffixés
+  (`/style.css`) ne sont jamais réécrits. Exposée via le mount Vidocq `vidocq.http.mount.<name>.clean-urls`.
+  Régression Chappe : `StaticFileHandlerCleanUrlsTest` (6 cas), full reactor vert.
+- **Côté Arago (consommation, pas contournement)** : `vidocq.http.mount.ui.clean-urls=true` ; le build
+  Vite est **inchangé** (`admin.html` reste le fichier servi). L'admin est désormais accessible à `/admin`.
+- **Vérifié** : acceptance @ui (le scénario admin ouvre `/admin` → titre "Admin" → login → invitation
+  speaker, 3/3 @ui verts) + non-@ui 32/32. La SPA speaker reste servie à `/` (index.html), inchangée.
 
 ### ARAGO-007 — Mansart : query dérivée à 3+ conditions silencieuse + onText WS avale l'exception
 - **Date** : 2026-06-01 → **résolu upstream 2026-06-01** (les 2 défauts corrigés dans leurs composants)

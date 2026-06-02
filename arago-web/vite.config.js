@@ -6,7 +6,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 // Chappe la sert (vidocq.http.mount.ui.classpath=static).
 //
 // Multi-page : la SPA speaker (index.html → /) et la console admin distincte
-// (admin.html → /admin.html, servie comme privacy.html ; cf. arago-spec §4.8).
+// (admin.html). Chappe la sert à l'URL propre /admin (StaticFileHandler.cleanUrls,
+// cf. ARAGO-006) ; le fichier reste admin.html dans le jar. Voir arago-spec §4.8.
 export default defineConfig({
   plugins: [svelte()],
   base: '/',
