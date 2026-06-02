@@ -467,6 +467,19 @@ public class RoomSocket implements WebSocketHandler {
                 .build().toString();
     }
 
+    /** Renders a pin reorder event ({@code {"type":"pin","action":"reorder","ids":[...]}}); clients re-sort locally. */
+    public static String pinReorderEvent(List<String> ids) {
+        var arr = Json.createArrayBuilder();
+        for (String id : ids) {
+            arr.add(id);
+        }
+        return Json.createObjectBuilder()
+                .add("type", "pin")
+                .add("action", "reorder")
+                .add("ids", arr)
+                .build().toString();
+    }
+
     /** Renders a pin add/remove WebSocket event ({@code {"type":"pin","action":...,"pin":{...}}}). */
     public static String pinEvent(String action, Pin p) {
         return Json.createObjectBuilder()

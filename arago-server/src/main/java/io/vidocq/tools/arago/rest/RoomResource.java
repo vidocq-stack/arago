@@ -32,6 +32,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.WebApplicationException;
@@ -254,6 +255,53 @@ public class RoomResource {
                 .stream().map(PinView::of).toList();
         return Response.ok(views).build();
     }
+
+    /**
+     * Reorders a room's pins (owner only, §11 Phase 2). The body lists pin ids in the desired order;
+     * each is reassigned its {@code orderIndex} by position. Ids not in the list are appended after,
+     * keeping their prior relative order (tolerates a partial list); an id foreign to the room is a 400.
+     */
+    @PUT
+    @Path("/{id}/pins/order")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response reorderPins(@PathParam("id") String id, ReorderRequest request) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        if (request == null || request.ids() == null || request.ids().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        List<Pin> roomPins = pinRepo.findByRoomIdOrderByOrderIndexAsc(id);
+        java.util.Map<String, Pin> byId = new java.util.LinkedHashMap<>();
+        for (Pin p : roomPins) {
+            byId.put(p.getId(), p);
+        }
+        for (String pinId : request.ids()) {
+            if (!byId.containsKey(pinId)) {
+                return Response.status(Response.Status.BAD_REQUEST).build(); // id not in this room
+            }
+        }
+        int order = 0;
+        java.util.Set<String> placed = new java.util.LinkedHashSet<>();
+        for (String pinId : request.ids()) {
+            Pin p = byId.get(pinId);
+            p.setOrderIndex(order++);
+            pinRepo.save(p);
+            placed.add(pinId);
+        }
+        for (Pin p : roomPins) {
+            if (!placed.contains(p.getId())) {
+                p.setOrderIndex(order++);
+                pinRepo.save(p);
+            }
+        }
+        List<Pin> reordered = pinRepo.findByRoomIdOrderByOrderIndexAsc(id);
+        roomSocket.broadcast(id, RoomSocket.pinReorderEvent(reordered.stream().map(Pin::getId).toList()));
+        return Response.ok(reordered.stream().map(PinView::of).toList()).build();
+    }
+
+    /** Reorder request body: pin ids in the desired display order. */
+    public record ReorderRequest(java.util.List<String> ids) {}
 
     /**
      * Lists a room's help requests oldest-first (cf. arago-spec §4.5), owner only. Feeds the speaker

@@ -61,3 +61,39 @@ Feature: Pinned content (speaker)
     When I GET "/api/rooms/{roomId}/pins"
     Then the response status is 200
     And the response body does not contain "sk-demo-12345"
+
+  Scenario: A speaker reorders pins
+    Given a Keycloak token for user "erin"
+    When I POST "/api/rooms" with body:
+      """
+      {"title":"Reorder room","mode":"CONF"}
+      """
+    Then the response status is 201
+    And I remember "roomId" from the JSON field "id"
+    When I POST "/api/rooms/{roomId}/pins" with body:
+      """
+      {"type":"TEXT","content":"pinAAA"}
+      """
+    Then the response status is 201
+    And I remember "p1" from the JSON field "id"
+    When I POST "/api/rooms/{roomId}/pins" with body:
+      """
+      {"type":"TEXT","content":"pinBBB"}
+      """
+    Then the response status is 201
+    And I remember "p2" from the JSON field "id"
+    When I POST "/api/rooms/{roomId}/pins" with body:
+      """
+      {"type":"TEXT","content":"pinCCC"}
+      """
+    Then the response status is 201
+    And I remember "p3" from the JSON field "id"
+    When I PUT "/api/rooms/{roomId}/pins/order" with body:
+      """
+      {"ids":["{p3}","{p1}","{p2}"]}
+      """
+    Then the response status is 200
+    When I GET "/api/rooms/{roomId}/pins"
+    Then the response status is 200
+    And the response body lists "pinCCC" before "pinAAA"
+    And the response body lists "pinAAA" before "pinBBB"

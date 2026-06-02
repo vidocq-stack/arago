@@ -29,10 +29,19 @@ ban rejoin (`onOpen` refuse un pseudo banni). Frame `{"type":"moderation","actio
 - Différés : modération **superadmin** (§10.2) ; **persistance** de l'état (survie au restart) ; nettoyage
   à la clôture ; UI speaker (endpoints pilotables via REST en attendant).
 
-## (c) Pins riches — À FAIRE
-Réordonnancement (`PUT …/pins/order`) + pins URL avec preview OpenGraph (fetch serveur best-effort +
-cache ; **attention SSRF** : allowlist http(s), refuser IP privées). Prérequis utile : une surface pins
-côté speaker (pas encore d'UI speaker « anime ma room »).
+## (c) Pins riches
+### (c1) Réordonnancement — LIVRÉ 2026-06-02
+`PUT /api/rooms/{id}/pins/order {ids:[...]}` (owner-only, réutilise `requireProvisionedSpeaker` +
+`ownedRoomOrAbort`) → réassigne `orderIndex` par position (id étranger → 400 ; pins non listés appendés),
+diffuse `RoomSocket.pinReorderEvent` (frame `{type:pin,action:reorder,ids:[...]}`), renvoie la liste
+`PinView` réordonnée. Tests : scénario `pins.feature` (3 pins → reorder → GET ordre) ; `RestSteps` :
+`I PUT … with body:` + `the response body lists "X" before "Y"`. Vert : acceptance **41/41**. Pas de
+migration (réutilise `order_index`). UI drag&drop speaker = ultérieure (pas d'UI speaker).
+
+### (c2) Pins URL + preview OpenGraph — À FAIRE (incrément dédié)
+Fetch serveur best-effort de l'URL + parse og:title/image/description + cache, exposé dans `PinView`
+(+ migration colonnes preview). **Durcir SSRF** : http(s) only, refuser IP privées/loopback/link-local
+(hôte + redirections), timeout court, taille max, parse `<head>` only.
 
 ## Différés (hors Phase 2 / dépendances)
 `SmtpMailer` réel (décision zéro-dép SMTP) + envoi async du mail de validation ; spec concurrency

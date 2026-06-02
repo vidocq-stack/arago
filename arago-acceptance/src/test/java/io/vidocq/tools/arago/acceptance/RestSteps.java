@@ -118,6 +118,15 @@ public class RestSteps {
         response = http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
+    @When("I PUT {string} with body:")
+    public void i_put_with_body(String path, String body) throws Exception {
+        HttpRequest req = authed(request(path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(subst(body)))
+                .build();
+        response = http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
     @When("I DELETE {string}")
     public void i_delete(String path) throws Exception {
         response = http.send(authed(request(path)).DELETE().build(), HttpResponse.BodyHandlers.ofString());
@@ -180,6 +189,15 @@ public class RestSteps {
     public void the_response_body_does_not_contain(String needle) {
         assertTrue(!response.body().contains(needle),
                 () -> "expected body NOT to contain '" + needle + "' but was: " + response.body());
+    }
+
+    @Then("the response body lists {string} before {string}")
+    public void the_response_body_lists_before(String first, String second) {
+        String body = response.body();
+        int i = body.indexOf(first);
+        int j = body.indexOf(second);
+        assertTrue(i >= 0 && j >= 0 && i < j,
+                () -> "expected '" + first + "' before '" + second + "' in: " + body);
     }
 
     @Then("the JSON field {string} is present")
