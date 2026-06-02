@@ -42,6 +42,16 @@ public class Pin {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** OpenGraph preview for URL pins (§4.4), best-effort and nullable; set after a server-side fetch. */
+    @Column(name = "preview_title", length = 500)
+    private String previewTitle;
+
+    @Column(name = "preview_image", length = 2000)
+    private String previewImage;
+
+    @Column(name = "preview_description", length = 2000)
+    private String previewDescription;
+
     public Pin() {}
 
     public Pin(String id, String roomId, PinType type, String content, String lang,
@@ -69,4 +79,10 @@ public class Pin {
     public void    setOrderIndex(int orderIndex){ this.orderIndex = orderIndex; }
     public Instant getCreatedAt()               { return createdAt;   }
     public void    setCreatedAt(Instant at)     { this.createdAt = at; }
+    public String  getPreviewTitle()           { return previewTitle; }
+    public void    setPreviewTitle(String t)   { this.previewTitle = t; }
+    public String  getPreviewImage()           { return previewImage; }
+    public void    setPreviewImage(String i)   { this.previewImage = i; }
+    public String  getPreviewDescription()     { return previewDescription; }
+    public void    setPreviewDescription(String d) { this.previewDescription = d; }
 }

@@ -6,7 +6,8 @@ import io.vidocq.tools.arago.persistence.Pin;
  * JSON projection of a {@link Pin} (cf. arago-spec §4.4) — returned by the pin endpoints and
  * broadcast over the room WebSocket.
  */
-public record PinView(String id, String type, String content, String lang, int orderIndex) {
+public record PinView(String id, String type, String content, String lang, int orderIndex,
+                      String previewTitle, String previewImage, String previewDescription) {
 
     public static PinView of(Pin p) {
         return new PinView(
@@ -14,6 +15,9 @@ public record PinView(String id, String type, String content, String lang, int o
                 p.getType() == null ? null : p.getType().name(),
                 p.getContent(),
                 p.getLang(),
-                p.getOrderIndex());
+                p.getOrderIndex(),
+                p.getPreviewTitle(),
+                p.getPreviewImage(),
+                p.getPreviewDescription());
     }
 }

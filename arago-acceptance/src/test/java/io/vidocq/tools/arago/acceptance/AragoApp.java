@@ -113,6 +113,10 @@ public final class AragoApp {
         // response so the acceptance flow can follow it end-to-end (prod default is false).
         System.setProperty("arago.mail.dev-expose-link", "true");
 
+        // Pin URL preview (§4.4): allow the SSRF fetcher to reach the local test HTTP server on
+        // 127.0.0.1 (prod default is false — private/loopback targets are blocked).
+        System.setProperty("arago.pins.preview.allow-private", "true");
+
         runtime = VidocqBootstrap.create().configure().start();
         awaitHealthy(baseUrl);
 

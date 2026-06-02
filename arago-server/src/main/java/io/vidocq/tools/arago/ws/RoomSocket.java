@@ -490,7 +490,11 @@ public class RoomSocket implements WebSocketHandler {
                         .add("pinType", p.getType() == null ? "" : p.getType().name())
                         .add("content", p.getContent() == null ? "" : p.getContent())
                         .add("lang", p.getLang() == null ? "" : p.getLang())
-                        .add("orderIndex", p.getOrderIndex()))
+                        .add("orderIndex", p.getOrderIndex())
+                        .add("previewTitle", p.getPreviewTitle() == null ? "" : p.getPreviewTitle())
+                        .add("previewImage", p.getPreviewImage() == null ? "" : p.getPreviewImage())
+                        .add("previewDescription",
+                                p.getPreviewDescription() == null ? "" : p.getPreviewDescription()))
                 .build().toString();
     }
 

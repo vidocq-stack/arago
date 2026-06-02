@@ -38,10 +38,20 @@ diffuse `RoomSocket.pinReorderEvent` (frame `{type:pin,action:reorder,ids:[...]}
 `I PUT … with body:` + `the response body lists "X" before "Y"`. Vert : acceptance **41/41**. Pas de
 migration (réutilise `order_index`). UI drag&drop speaker = ultérieure (pas d'UI speaker).
 
-### (c2) Pins URL + preview OpenGraph — À FAIRE (incrément dédié)
-Fetch serveur best-effort de l'URL + parse og:title/image/description + cache, exposé dans `PinView`
-(+ migration colonnes preview). **Durcir SSRF** : http(s) only, refuser IP privées/loopback/link-local
-(hôte + redirections), timeout court, taille max, parse `<head>` only.
+### (c2) Pins URL + preview OpenGraph — LIVRÉ 2026-06-02
+À la création d'un pin `type=URL`, fetch serveur **synchrone best-effort** de la page + parse
+`og:title|image|description` (fallback `<title>`), stocké sur le pin (migration **V10**) + exposé dans
+`PinView` + diffusé dans `pinEvent`. **Durci SSRF** (`SsrfGuard`) : http(s) only, refus
+loopback/any/link/site-local/multicast + 100.64/10 + fc00::/7 + dé-map IPv4-mapped (hôte ET chaque
+redirection, suivies manuellement ≤3) ; timeout ~3 s ; corps ≤256 KB ; `text/html` only ; cache mémoire
+borné. Flag `arago.pins.preview.allow-private` (défaut false ; true en test pour le serveur local 127.0.0.1).
+- `io.vidocq.tools.arago.pins` : `SsrfGuard`, `OpenGraph` (parser hand-rollé), `OgPreviewFetcher` (`java.net.http`).
+- Tests : unit `SsrfGuardTest` (IPs bloquées/autorisées) + `OpenGraphParserTest` ; acceptance
+  `pins-preview.feature` (serveur OG local JDK `com.sun.net.httpserver` → pin URL → preview title).
+  Vert : unit 5/5, acceptance **42/42**.
+- Limite assumée (notée) : fenêtre TOCTOU/DNS-rebinding (connect-par-IP-validée = durcissement ultérieur).
+
+## Phase 2 — COMPLÈTE (a validation email, b modération, c1 reorder, c2 preview) ✅
 
 ## Différés (hors Phase 2 / dépendances)
 `SmtpMailer` réel (décision zéro-dép SMTP) + envoi async du mail de validation ; spec concurrency

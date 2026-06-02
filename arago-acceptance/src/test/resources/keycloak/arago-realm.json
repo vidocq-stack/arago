@@ -169,6 +169,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "nina",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "nina@oidc.test",
+      "firstName": "Nina",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

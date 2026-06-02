@@ -95,6 +95,9 @@ public class RoomResource {
     @Inject
     RoomSocket roomSocket;
 
+    @Inject
+    io.vidocq.tools.arago.pins.OgPreviewFetcher ogFetcher;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -238,8 +241,17 @@ public class RoomResource {
         }
         int order = (int) pinRepo.countByRoomId(id);
         String lang = request.type() == PinType.CODE ? request.lang() : null;
-        Pin saved = pinRepo.save(new Pin(UUID.randomUUID().toString(), id, request.type(),
-                request.content(), lang, order, Instant.now()));
+        Pin pin = new Pin(UUID.randomUUID().toString(), id, request.type(),
+                request.content(), lang, order, Instant.now());
+        // URL pins get a best-effort, SSRF-hardened OpenGraph preview fetched at creation (§4.4).
+        if (request.type() == PinType.URL) {
+            ogFetcher.fetch(request.content()).ifPresent(p -> {
+                pin.setPreviewTitle(p.title());
+                pin.setPreviewImage(p.image());
+                pin.setPreviewDescription(p.description());
+            });
+        }
+        Pin saved = pinRepo.save(pin);
         roomSocket.broadcast(id, RoomSocket.pinEvent("add", saved));
         return Response.status(Response.Status.CREATED).entity(PinView.of(saved)).build();
     }
