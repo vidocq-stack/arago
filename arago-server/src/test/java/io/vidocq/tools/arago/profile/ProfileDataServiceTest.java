@@ -2,6 +2,7 @@ package io.vidocq.tools.arago.profile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.List;
@@ -13,7 +14,7 @@ import org.junit.jupiter.api.Test;
 class ProfileDataServiceTest {
 
     private static ChatMessage msg(String id, String profileId, String pseudo, boolean persistent) {
-        return new ChatMessage(id, "room-1", profileId, pseudo, false, persistent, "hello", Instant.now(), null);
+        return new ChatMessage(id, "room-1", profileId, pseudo, false, persistent, "hello", Instant.now(), null, true);
     }
 
     @Test
@@ -35,5 +36,18 @@ class ProfileDataServiceTest {
     @Test
     void anonymizeOfNothingIsZero() {
         assertEquals(0, ProfileDataService.anonymizeInPlace(List.of()));
+    }
+
+    @Test
+    void markValidatedFlipsOnlyPendingAndCounts() {
+        ChatMessage pending = msg("m1", "p-7", "Ada", true);
+        pending.setValidated(false);
+        ChatMessage alreadyActive = msg("m2", "p-7", "Ada", true); // validated=true via the helper
+
+        int activated = ProfileDataService.markValidatedInPlace(List.of(pending, alreadyActive));
+
+        assertEquals(1, activated, "only the held message should flip");
+        assertTrue(pending.isValidated());
+        assertTrue(alreadyActive.isValidated());
     }
 }

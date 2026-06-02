@@ -36,6 +36,10 @@ public class AttendeeProfile {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** Whether the email was validated via a magic link (§4.7/§10.1); false until then. */
+    @Column(name = "email_validated", nullable = false)
+    private boolean emailValidated;
+
     public AttendeeProfile() {}
 
     public AttendeeProfile(String id, String email, String pseudo, String consentTextVersion,
@@ -60,4 +64,6 @@ public class AttendeeProfile {
     public void    setConsentAt(Instant at)         { this.consentAt = at;       }
     public Instant getCreatedAt()                   { return createdAt;          }
     public void    setCreatedAt(Instant at)         { this.createdAt = at;       }
+    public boolean isEmailValidated()               { return emailValidated;     }
+    public void    setEmailValidated(boolean v)     { this.emailValidated = v;   }
 }

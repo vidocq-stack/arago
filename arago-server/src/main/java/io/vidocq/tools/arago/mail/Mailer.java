@@ -15,4 +15,10 @@ public interface Mailer {
      * leak the link/token at INFO level (it is a bearer credential).
      */
     void sendMagicLink(String email, String link);
+
+    /**
+     * Sends the email-validation magic link triggered by an attendee's first persistent message
+     * (§4.7/§10.1). Same credential-handling rule: never log the link at INFO.
+     */
+    void sendValidationLink(String email, String link);
 }

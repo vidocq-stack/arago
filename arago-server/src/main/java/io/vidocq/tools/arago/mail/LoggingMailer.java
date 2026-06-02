@@ -21,4 +21,11 @@ public class LoggingMailer implements Mailer {
         LOG.log(System.Logger.Level.INFO, "Magic link generated for {0} (email delivery is not configured)", email);
         LOG.log(System.Logger.Level.DEBUG, () -> "Magic link for " + email + ": " + link);
     }
+
+    @Override
+    public void sendValidationLink(String email, String link) {
+        LOG.log(System.Logger.Level.INFO,
+                "Email validation link generated for {0} (email delivery is not configured)", email);
+        LOG.log(System.Logger.Level.DEBUG, () -> "Validation link for " + email + ": " + link);
+    }
 }

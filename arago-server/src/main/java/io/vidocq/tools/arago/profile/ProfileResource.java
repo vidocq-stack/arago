@@ -127,6 +127,21 @@ public class ProfileResource {
         return Response.ok(data.erase(profileId)).build();
     }
 
+    @GET
+    @Path("/validate")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response validate(@QueryParam("token") String token) {
+        String profileId = subject(token);
+        if (profileId == null) {
+            return unauthorized();
+        }
+        ProfileDataService.ValidateResult result = data.validateEmail(profileId);
+        if (!result.validated()) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(result).build();
+    }
+
     /** Resolves the profile id from a magic-link token, or null if the token is missing/invalid/expired. */
     private String subject(String token) {
         if (token == null || token.isBlank()) {

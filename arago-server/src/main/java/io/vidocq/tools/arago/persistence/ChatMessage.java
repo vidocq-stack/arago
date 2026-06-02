@@ -49,11 +49,19 @@ public class ChatMessage {
     @Column(name = "purge_after")
     private Instant purgeAfter;
 
+    /**
+     * Whether a persistent message is "active". A persistent message from an attendee whose email is
+     * not yet validated stays {@code false} (held pending, §4.7/§10.1) until they follow the validation
+     * magic link; ephemeral messages are always {@code true}.
+     */
+    @Column(nullable = false)
+    private boolean validated;
+
     public ChatMessage() {}
 
     public ChatMessage(String id, String roomId, String profileId, String authorPseudo,
                        boolean fromSpeaker, boolean persistent, String body, Instant at,
-                       Instant purgeAfter) {
+                       Instant purgeAfter, boolean validated) {
         this.id           = id;
         this.roomId       = roomId;
         this.profileId    = profileId;
@@ -63,6 +71,7 @@ public class ChatMessage {
         this.body         = body;
         this.at           = at;
         this.purgeAfter   = purgeAfter;
+        this.validated    = validated;
     }
 
     public String  getId()                       { return id;           }
@@ -83,4 +92,6 @@ public class ChatMessage {
     public void    setAt(Instant at)             { this.at = at;        }
     public Instant getPurgeAfter()               { return purgeAfter;   }
     public void    setPurgeAfter(Instant after)  { this.purgeAfter = after; }
+    public boolean isValidated()                 { return validated;    }
+    public void    setValidated(boolean v)       { this.validated = v;  }
 }

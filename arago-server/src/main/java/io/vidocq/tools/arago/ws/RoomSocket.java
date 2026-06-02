@@ -5,8 +5,12 @@ import io.vidocq.chappe.api.Request;
 import io.vidocq.chappe.api.WebSocket;
 import io.vidocq.chappe.api.WebSocketHandler;
 import io.vidocq.tools.arago.auth.AragoJwt;
+import io.vidocq.tools.arago.mail.Mailer;
+import io.vidocq.tools.arago.persistence.AttendeeProfile;
+import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
 import io.vidocq.tools.arago.persistence.ChatMessage;
 import io.vidocq.tools.arago.persistence.ChatMessageRepository;
+import io.vidocq.tools.arago.profile.ProfileTokens;
 import io.vidocq.tools.arago.persistence.HelpRequest;
 import io.vidocq.tools.arago.persistence.HelpRequestRepository;
 import io.vidocq.tools.arago.persistence.HelpStatus;
@@ -29,6 +33,8 @@ import org.eclipse.microprofile.config.ConfigProvider;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -71,7 +77,16 @@ public class RoomSocket implements WebSocketHandler {
     ChatMessageRepository messages;
 
     @Inject
+    AttendeeProfileRepository profiles;
+
+    @Inject
     AttendeeTokens attendeeTokens;
+
+    @Inject
+    ProfileTokens profileTokens;
+
+    @Inject
+    Mailer mailer;
 
     @Inject
     PinRepository pinRepo;
@@ -178,9 +193,38 @@ public class RoomSocket implements WebSocketHandler {
         Instant now = Instant.now();
         Instant purgeAfter = persistent ? null : now.plus(ephemeralRetention());
 
-        ChatMessage saved = messages.save(new ChatMessage(
-                UUID.randomUUID().toString(), roomId, profileId, pseudo, false, persistent, body, now, purgeAfter));
+        // A persistent message from an unvalidated email is held (validated=false) and, on the attendee's
+        // FIRST persistent message, triggers a validation magic link (§4.7/§10.1). Ephemeral = active.
+        boolean validated = true;
+        if (persistent) {
+            AttendeeProfile profile = profiles.findById(profileId).orElse(null);
+            validated = profile != null && profile.isEmailValidated();
+            if (profile != null && !validated) {
+                maybeSendValidationLink(profile);
+            }
+        }
+
+        ChatMessage saved = messages.save(new ChatMessage(UUID.randomUUID().toString(), roomId, profileId,
+                pseudo, false, persistent, body, now, purgeAfter, validated));
         broadcast(roomId, render(saved));
+    }
+
+    /** Sends the validation magic link only on the attendee's first persistent message (anti-spam). */
+    private void maybeSendValidationLink(AttendeeProfile profile) {
+        boolean firstPersistent = messages.findByProfileId(profile.getId()).stream()
+                .noneMatch(ChatMessage::isPersistent);
+        if (!firstPersistent) {
+            return;
+        }
+        String link = publicBaseUrl() + "/api/profile/validate?token="
+                + URLEncoder.encode(profileTokens.issue(profile.getId()), StandardCharsets.UTF_8);
+        mailer.sendValidationLink(profile.getEmail(), link);
+    }
+
+    private static String publicBaseUrl() {
+        String url = ConfigProvider.getConfig()
+                .getOptionalValue("arago.public.url", String.class).orElse("http://localhost:8080");
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     /**
