@@ -327,6 +327,55 @@ public class RoomResource {
         return Response.ok(HelpView.of(saved)).build();
     }
 
+    // --- Moderation (§7): the owner-speaker mutes/kicks an attendee (by pseudo). State lives in RoomSocket. ---
+
+    @POST
+    @Path("/{id}/moderation/mute")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response mute(@PathParam("id") String id, ModerationRequest request) {
+        return moderate(id, request, Action.MUTE);
+    }
+
+    @POST
+    @Path("/{id}/moderation/unmute")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response unmute(@PathParam("id") String id, ModerationRequest request) {
+        return moderate(id, request, Action.UNMUTE);
+    }
+
+    @POST
+    @Path("/{id}/moderation/kick")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response kick(@PathParam("id") String id, ModerationRequest request) {
+        return moderate(id, request, Action.KICK);
+    }
+
+    private enum Action { MUTE, UNMUTE, KICK }
+
+    private Response moderate(String id, ModerationRequest request, Action action) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        if (request == null || request.pseudo() == null || request.pseudo().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String pseudo = request.pseudo().trim();
+        int affected = switch (action) {
+            case MUTE -> roomSocket.mute(id, pseudo);
+            case UNMUTE -> roomSocket.unmute(id, pseudo);
+            case KICK -> roomSocket.kick(id, pseudo);
+        };
+        return Response.ok(new ModerationResult(pseudo, affected)).build();
+    }
+
+    /** Moderation request body: the target attendee's pseudo. */
+    public record ModerationRequest(String pseudo) {}
+
+    /** Moderation outcome: the target pseudo + how many of their open sockets were affected. */
+    public record ModerationResult(String pseudo, int affected) {}
+
     /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
     Room ownedRoomOrAbort(String id, String ownerSub) {
         Room room = rooms.findById(id)

@@ -304,6 +304,7 @@ public class RestSteps {
         final java.net.http.WebSocket socket;
         final List<String> messages = Collections.synchronizedList(new ArrayList<>());
         final StringBuilder frame = new StringBuilder();
+        volatile boolean closed;
         WsConn(java.net.http.WebSocket socket) { this.socket = socket; }
     }
 
@@ -335,11 +336,41 @@ public class RestSteps {
                         webSocket.request(1);
                         return null;
                     }
+
+                    @Override
+                    public CompletionStage<?> onClose(java.net.http.WebSocket webSocket, int statusCode, String reason) {
+                        if (holder[0] != null) holder[0].closed = true;
+                        return null;
+                    }
+
+                    @Override
+                    public void onError(java.net.http.WebSocket webSocket, Throwable error) {
+                        if (holder[0] != null) holder[0].closed = true;
+                    }
                 })
                 .get(10, TimeUnit.SECONDS);
         WsConn conn = new WsConn(socket);
         holder[0] = conn;
         conns.put(name, conn);
+    }
+
+    @When("on WebSocket {string} I send the chat message {string}")
+    public void on_ws_send_chat(String name, String body) throws Exception {
+        String frame = "{\"body\":\"" + body.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}";
+        conns.get(name).socket.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
+    @Then("WebSocket {string} is closed within {int} seconds")
+    public void ws_is_closed_within(String name, int seconds) throws Exception {
+        WsConn c = conns.get(name);
+        long deadline = System.nanoTime() + Duration.ofSeconds(seconds).toNanos();
+        while (System.nanoTime() < deadline) {
+            if (c.closed) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail("WebSocket '" + name + "' was not closed within " + seconds + "s");
     }
 
     @When("on WebSocket {string} I claim seat row {int} block {int} seat {int}")

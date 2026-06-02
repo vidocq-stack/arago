@@ -17,9 +17,17 @@ pas de SMTP) + dev-expose pour les tests.
   → validate `messagesActivated:1` → `validated:true`). Vert : unit + acceptance **38/38**.
 - Gating de la vue speaker sur `validated` : à câbler quand la vue/réponse-speaker existera (différé).
 
-## (b) Modération kick/mute — À FAIRE
-Endpoints speaker (`POST /api/rooms/{id}/kick|mute {pseudo}`) + enforcement temps réel `RoomSocket`
-(fermer la socket kické, drop les messages d'un muté, frame `moderation`). UI speaker ultérieure.
+## (b) Modération kick/mute — LIVRÉ 2026-06-02
+Le speaker propriétaire mute/kick un attendee **par pseudo** (§7). Endpoints owner-only
+`POST /api/rooms/{id}/moderation/{mute,unmute,kick} {pseudo}` (`RoomResource`, réutilise
+`requireProvisionedSpeaker` + `ownedRoomOrAbort`). État **en mémoire** par room dans `RoomSocket`
+(`mutedByRoom`/`bannedByRoom`) : mute = drop + frame `moderation` au muté ; kick = ferme les sockets +
+ban rejoin (`onOpen` refuse un pseudo banni). Frame `{"type":"moderation","action":...,"pseudo":...}`.
+- Tests : `moderation.feature` (mute → B ne reçoit pas ; unmute → B reçoit ; kick → socket A fermée ;
+  401 sans token speaker). RestSteps : chat sur conn nommée + `WebSocket "X" is closed within N s`.
+  Vert : acceptance **40/40**. (Pas de test unit : logique WS-stateful, couverte par l'acceptance réelle.)
+- Différés : modération **superadmin** (§10.2) ; **persistance** de l'état (survie au restart) ; nettoyage
+  à la clôture ; UI speaker (endpoints pilotables via REST en attendant).
 
 ## (c) Pins riches — À FAIRE
 Réordonnancement (`PUT …/pins/order`) + pins URL avec preview OpenGraph (fetch serveur best-effort +

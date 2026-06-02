@@ -157,6 +157,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "mona",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "mona@oidc.test",
+      "firstName": "Mona",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

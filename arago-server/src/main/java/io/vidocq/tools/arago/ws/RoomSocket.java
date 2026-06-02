@@ -100,6 +100,10 @@ public class RoomSocket implements WebSocketHandler {
     /** roomId → open sockets, for broadcast. ConcurrentHashMap + key-set is virtual-thread-safe. */
     private final Map<String, Set<WebSocket>> peers = new ConcurrentHashMap<>();
 
+    /** Moderation state (§7), per room, in memory for the room's lifetime: muted and kicked (banned) pseudos. */
+    private final Map<String, Set<String>> mutedByRoom = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> bannedByRoom = new ConcurrentHashMap<>();
+
     @Override
     public void onOpen(WebSocket ws, Request handshake) throws IOException {
         String pin = handshake.pathParams().get("pin");
@@ -131,6 +135,12 @@ public class RoomSocket implements WebSocketHandler {
         ws.attribute("pseudo", pseudo);
         if (profileId != null && !profileId.isBlank()) {
             ws.attribute("profileId", profileId);
+        }
+        // A kicked attendee cannot rejoin the room (§7) — refuse the handshake outright.
+        Set<String> banned = bannedByRoom.get(room.getId());
+        if (banned != null && banned.contains(pseudo)) {
+            ws.close(CloseCodes.POLICY_VIOLATION, "kicked");
+            return;
         }
         peers.computeIfAbsent(room.getId(), k -> ConcurrentHashMap.newKeySet()).add(ws);
 
@@ -180,6 +190,12 @@ public class RoomSocket implements WebSocketHandler {
     }
 
     private void handleChat(WebSocket ws, String roomId, String pseudo, JsonObject json) {
+        // Muted attendee (§7): drop the message (no persist, no broadcast); tell only the sender.
+        Set<String> muted = mutedByRoom.get(roomId);
+        if (muted != null && muted.contains(pseudo)) {
+            trySend(ws, moderationEvent("muted", pseudo));
+            return;
+        }
         String profileId = (String) ws.attribute("profileId");
         String body = json.getString("body", null);
         if (body == null || body.isBlank()) {
@@ -383,6 +399,72 @@ public class RoomSocket implements WebSocketHandler {
         for (WebSocket peer : set) {
             trySend(peer, payload);
         }
+    }
+
+    // --- Moderation (§7), invoked by the owner-speaker via RoomResource. State is in memory, per room. ---
+
+    /** Mutes a pseudo: their further messages are dropped. Returns the number of their open sockets notified. */
+    public int mute(String roomId, String pseudo) {
+        mutedByRoom.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(pseudo);
+        return notify(roomId, pseudo, "muted");
+    }
+
+    /** Lifts a mute. Returns the number of the pseudo's open sockets notified. */
+    public int unmute(String roomId, String pseudo) {
+        Set<String> muted = mutedByRoom.get(roomId);
+        if (muted != null) {
+            muted.remove(pseudo);
+        }
+        return notify(roomId, pseudo, "unmuted");
+    }
+
+    /** Kicks a pseudo: bans them for the room's lifetime and closes their open sockets. Returns sockets closed. */
+    public int kick(String roomId, String pseudo) {
+        bannedByRoom.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(pseudo);
+        int closed = 0;
+        for (WebSocket ws : socketsOf(roomId, pseudo)) {
+            try {
+                ws.close(CloseCodes.POLICY_VIOLATION, "kicked");
+                closed++;
+            } catch (IOException e) {
+                LOG.log(System.Logger.Level.DEBUG, "kick close failed", e);
+            }
+        }
+        broadcast(roomId, moderationEvent("kicked", pseudo));
+        return closed;
+    }
+
+    /** Sends a moderation event to every open socket of {@code pseudo} in the room; returns how many. */
+    private int notify(String roomId, String pseudo, String action) {
+        int n = 0;
+        for (WebSocket ws : socketsOf(roomId, pseudo)) {
+            trySend(ws, moderationEvent(action, pseudo));
+            n++;
+        }
+        return n;
+    }
+
+    private List<WebSocket> socketsOf(String roomId, String pseudo) {
+        Set<WebSocket> set = peers.get(roomId);
+        if (set == null) {
+            return List.of();
+        }
+        List<WebSocket> result = new ArrayList<>();
+        for (WebSocket ws : set) {
+            if (pseudo.equals(ws.attribute("pseudo"))) {
+                result.add(ws);
+            }
+        }
+        return result;
+    }
+
+    /** Renders a moderation event ({@code {"type":"moderation","action":...,"pseudo":...}}). */
+    public static String moderationEvent(String action, String pseudo) {
+        return Json.createObjectBuilder()
+                .add("type", "moderation")
+                .add("action", action)
+                .add("pseudo", pseudo)
+                .build().toString();
     }
 
     /** Renders a pin add/remove WebSocket event ({@code {"type":"pin","action":...,"pin":{...}}}). */
