@@ -105,8 +105,13 @@ job de purge quotidien idempotent, page `/privacy`, filtre logs (no email).
   `GET /api/profile/me`, affiche profil + messages persistants, boutons Exporter + Supprimer-avec-confirmation
   → `DELETE`). Le magic-link pointe désormais vers la page (`ProfileResource`). Test @ui `profile-ui.feature`.
   Vert : acceptance non-@ui 37/37, **@ui 6/6**.
-- **Reste I4** (différé) : réponse speaker par email + `SmtpMailer` (décision zéro-dép SMTP) ; purge
-  **programmée** quotidienne (pas de scheduler stack — manuel via `/api/admin/purge/run`) ; rétention
+- **Purge programmée livrée 2026-06-02 (stopgap)** : `PurgeScheduler` (`@ApplicationScoped`) démarre au
+  boot via `@Observes @Initialized(ApplicationScoped.class)` (fired par Vauban) un
+  `ScheduledExecutorService` daemon mono-thread qui appelle `PurgeService.run()` toutes les
+  `arago.purge.interval-minutes` (def 1440), `safePurge` avale les exceptions (sinon le fixed-rate
+  s'annule), `@PreDestroy` arrête. **Temporaire** : à remplacer par un `@Scheduled` déclaratif quand la
+  **spec concurrency Vidocq** + son extension seront dispo. Vérifié : log de boot + acceptance 37/37.
+- **Reste I4** (différé) : réponse speaker par email + `SmtpMailer` (décision zéro-dép SMTP) ; rétention
   help/pins par âge de room ENDED. (Purge des `SECRET` pins à la clôture : **déjà fait** dans `RoomResource.end`.)
 
 ---
