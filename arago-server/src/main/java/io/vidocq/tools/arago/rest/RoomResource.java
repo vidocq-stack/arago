@@ -3,6 +3,8 @@ package io.vidocq.tools.arago.rest;
 import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
 import io.vidocq.tools.arago.persistence.AttendeeProfile;
 import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
+import io.vidocq.tools.arago.history.Exports;
+import io.vidocq.tools.arago.persistence.ChatMessage;
 import io.vidocq.tools.arago.persistence.HelpRequest;
 import io.vidocq.tools.arago.persistence.HelpRequestRepository;
 import io.vidocq.tools.arago.persistence.HelpStatus;
@@ -97,6 +99,9 @@ public class RoomResource {
 
     @Inject
     io.vidocq.tools.arago.pins.OgPreviewFetcher ogFetcher;
+
+    @Inject
+    io.vidocq.tools.arago.persistence.ChatMessageRepository messages;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -519,6 +524,65 @@ public class RoomResource {
 
     /** Reveal command body: {@code cmd} ∈ next/prev/goto/togglePause, optional target {@code slide}. */
     public record RevealCmd(String cmd, Integer slide) {}
+
+    // --- Past-event history & exports (§11 Phase 5), owner-only. ---
+
+    @GET
+    @Path("/{id}/chat")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response chatHistory(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        List<ChatView> views = messages.findByRoomIdOrderByAtAsc(id).stream()
+                .map(m -> new ChatView(m.getAuthorPseudo(), m.getBody(), m.isPersistent(), m.isValidated(),
+                        m.getAt() == null ? null : m.getAt().toString()))
+                .toList();
+        return Response.ok(views).build();
+    }
+
+    @GET
+    @Path("/{id}/stats")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response stats(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        List<ChatMessage> msgs = messages.findByRoomIdOrderByAtAsc(id);
+        List<HelpRequest> helps = helpRepo.findByRoomIdOrderByCreatedAtAsc(id);
+        int persistent = (int) msgs.stream().filter(ChatMessage::isPersistent).count();
+        int resolved = (int) helps.stream().filter(h -> h.getStatus() == HelpStatus.RESOLVED).count();
+        int attendees = (int) msgs.stream().map(ChatMessage::getAuthorPseudo).distinct().count();
+        return Response.ok(new RoomStats(msgs.size(), persistent, helps.size(), resolved, attendees)).build();
+    }
+
+    @GET
+    @Path("/{id}/chat/export.md")
+    @Produces("text/markdown")
+    public Response exportChat(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = ownedRoomOrAbort(id, ownerSub);
+        String md = Exports.chatMarkdown(room.getTitle(), room.getPin(), messages.findByRoomIdOrderByAtAsc(id));
+        return Response.ok(md)
+                .header("Content-Disposition", "attachment; filename=\"chat-" + room.getPin() + ".md\"")
+                .build();
+    }
+
+    @GET
+    @Path("/{id}/help/export.csv")
+    @Produces("text/csv")
+    public Response exportHelp(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = ownedRoomOrAbort(id, ownerSub);
+        String csv = Exports.helpCsv(helpRepo.findByRoomIdOrderByCreatedAtAsc(id));
+        return Response.ok(csv)
+                .header("Content-Disposition", "attachment; filename=\"help-" + room.getPin() + ".csv\"")
+                .build();
+    }
+
+    /** A chat message in the history view. */
+    public record ChatView(String author, String body, boolean persistent, boolean validated, String at) {}
+
+    /** Past-event counters. */
+    public record RoomStats(int messages, int persistentMessages, int helpTotal, int helpResolved, int attendees) {}
 
     /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
     Room ownedRoomOrAbort(String id, String ownerSub) {

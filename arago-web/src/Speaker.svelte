@@ -34,6 +34,7 @@
   let dragFrom = $state(null);
   let revealInfo = $state(null);     // { secret, pin } after enabling reveal
   let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
+  let stats = $state(null);          // { messages, persistentMessages, helpTotal, helpResolved, attendees }
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
@@ -102,12 +103,13 @@
     room = r;
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
-    revealInfo = null; revealState = null;
+    revealInfo = null; revealState = null; stats = null;
     const tk = await fetch(`/api/rooms/${r.id}/observer-token`, { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
     await loadHelp();
     await loadPins();
+    await loadStats();
     connect(pin, obsToken);
   }
 
@@ -260,6 +262,26 @@
       method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ cmd }),
     });
+  }
+
+  // ---------- history & exports (§11 Phase 5) ----------
+  async function loadStats() {
+    const res = await fetch(`/api/rooms/${room.id}/stats`, { headers: authHeaders() });
+    if (res.ok) stats = await res.json();
+  }
+
+  async function download(path, filename) {
+    const res = await fetch(path, { headers: authHeaders() });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   // ---------- top-down geometry (mirrors App.svelte §4.5) ----------
@@ -421,6 +443,22 @@
             {/if}
           </div>
         {/if}
+
+        <div class="panel">
+          <h2>Historique &amp; export</h2>
+          {#if stats}
+            <p class="hint" data-testid="room-stats">
+              {stats.messages} messages · {stats.persistentMessages} persistants ·
+              {stats.helpTotal} aides ({stats.helpResolved} résolues) · {stats.attendees} participants
+            </p>
+          {/if}
+          <div class="bar">
+            <button type="button" class="ghost" data-testid="export-chat"
+                    onclick={() => download(`/api/rooms/${room.id}/chat/export.md`, `chat-${room.pin}.md`)}>Exporter le chat (.md)</button>
+            <button type="button" class="ghost" data-testid="export-help"
+                    onclick={() => download(`/api/rooms/${room.id}/help/export.csv`, `help-${room.pin}.csv`)}>Exporter l'aide (.csv)</button>
+          </div>
+        </div>
 
         {#if Object.keys(people).length}
           <div class="panel">
