@@ -39,6 +39,8 @@ public final class AragoApp {
     /** Realm imported into the Keycloak container; see {@code keycloak/arago-realm.json}. */
     public static final String KEYCLOAK_REALM = "arago";
     private static final String KEYCLOAK_CLIENT = "arago-test";
+    /** Public PKCE client for the front-channel Authorization Code flow (see arago-realm.json). */
+    private static final String KEYCLOAK_WEB_CLIENT = "arago-web";
 
     private static PostgreSQLContainer<?> postgres;
     private static GenericContainer<?> keycloak;
@@ -91,6 +93,13 @@ public final class AragoApp {
         System.setProperty("mp.jwt.verify.issuer", issuer);
         System.setProperty("mp.jwt.verify.publickey.location",
                 issuer + "/protocol/openid-connect/certs");
+
+        // OIDC front-channel (Authorization Code + PKCE): the public browser client + this instance's
+        // public base URL (used to build the redirect_uri = {public.url}/api/oidc/callback). The test
+        // realm's arago-web client whitelists redirectUris ["*"], so the dynamic localhost port matches.
+        System.setProperty("arago.oidc.issuer", issuer);
+        System.setProperty("arago.oidc.web-client-id", KEYCLOAK_WEB_CLIENT);
+        System.setProperty("arago.public.url", baseUrl);
 
         // Superadmin break-glass account (spec §4.8): credentials only via config — here as system
         // properties (ordinal 400, override vidocq.properties). The hash is computed from the known

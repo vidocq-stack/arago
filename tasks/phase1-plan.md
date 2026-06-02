@@ -52,6 +52,23 @@ un speaker provisionné se logue en OIDC, un non-provisionné est refusé (403).
 - **Stub Keycloak en test** : on teste l'enforcement allowlist avec un JWT OIDC forgé (clé de test)
   plutôt qu'un vrai Keycloak (Testcontainers Keycloak = lourd ; à réserver à un test d'intégration opt-in).
 
+### État (MAJ 2026-06-02) — I1 livré, dont le front-channel OIDC ✅
+- **Superadmin / allowlist / audit / rate-limit / OIDC back-channel** : livrés et verts (cf. `BUG.md`
+  ARAGO-004 : cervantes valide le Bearer Keycloak, `/api/oidc/me` 200/403/401, superadmin sur `X-Arago-Admin`).
+- **Front-channel OIDC (Authorization Code + PKCE)** — *reliquat livré 2026-06-02* :
+  - Backend `io.vidocq.tools.arago.oidc` : `Pkce` (S256), `OidcFlowStore` (state + ticket, single-use+TTL,
+    VT-safe), `KeycloakOidcClient` (`java.net.http`), `OidcLoginResource` (`GET /api/oidc/login` → 302
+    Keycloak ; `GET /api/oidc/callback` → échange code + allowlist + cookie ticket one-time ; `POST
+    /api/oidc/token` → consomme le ticket). Décision : **token livré à la SPA** (Bearer, pas de session
+    serveur, pas de token dans l'URL). `requires java.net.http` ajouté au module-info.
+  - Front `arago-web/App.svelte` : bouton « Se connecter (Keycloak) » + récupération one-time du token +
+    `/api/oidc/me` → bannière « Connecté : … ». Hook minimal (pas de console speaker = I2).
+  - Tests : `PkceTest`/`OidcFlowStoreTest` (10) ; realm de test + client public `arago-web` (standard
+    flow) ; `oidc.feature` (302 PKCE) ; **@ui `oidc-login.feature`** (login Keycloak réel : judy → identité,
+    bob → non provisionné). Vert : unit 10/10, acceptance non-@ui 33/33, @ui 5/5.
+  - Décision « stub vs vrai Keycloak » tranchée côté **vrai Keycloak Testcontainers** (déjà en place).
+- **Reste I1** : refresh token / logout / TTL long (l'access token ~600 s suffit pour l'instant) ; co-speaker.
+
 ---
 
 ## I2 — Room lifecycle + QR (DRAFT→ACTIVE, PIN unique)

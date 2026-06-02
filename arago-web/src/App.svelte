@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   // Attendee SPA (arago-spec §4.2/§4.5): join a room by PIN + pseudo, then — in a LAB room — see the
   // top-down seating plan, tap a free seat to sit (first-come-first-serve, server-authoritative), and
   // raise a "need help" request. All real-time state flows over the room WebSocket (RoomSocket);
@@ -11,6 +12,51 @@
   let joinError = $state('');
   const pinDigits = $derived(pin.replace(/\D/g, '').slice(0, 6));
   const canJoin = $derived(pinDigits.length === 6 && pseudo.trim().length > 0);
+
+  // --- speaker OIDC (front-channel, arago-spec §7/§8) ---
+  // The speaker logs in through Keycloak (Authorization Code + PKCE, server-driven). The callback
+  // hands back a one-time ticket cookie; we exchange it once for the Keycloak access token, kept in
+  // memory and sent as Authorization: Bearer (cervantes validates it). The token never rides a URL.
+  let speaker = $state(null);        // { email, role } once logged in
+  let speakerToken = $state(null);   // Keycloak access token (in-memory only)
+  let oidcError = $state('');
+
+  const OIDC_ERRORS = {
+    speaker_not_provisioned: 'Compte non provisionné — demandez à l’organisateur de vous inviter.',
+    invalid_state: 'Session de connexion expirée, réessayez.',
+    exchange_failed: 'Échec de la connexion OIDC, réessayez.',
+  };
+
+  function loginAsSpeaker() {
+    window.location.assign('/api/oidc/login');
+  }
+
+  async function completeOidcLogin() {
+    const params = new URLSearchParams(window.location.search);
+    const loggedIn = params.get('login') === 'ok';
+    const err = params.get('oidc_error');
+    if (!loggedIn && !err) return;
+    // Strip the OIDC query params so a refresh doesn't replay them.
+    window.history.replaceState({}, '', window.location.pathname);
+    if (err) {
+      oidcError = OIDC_ERRORS[err] || 'Connexion impossible.';
+      return;
+    }
+    try {
+      const res = await fetch('/api/oidc/token', { method: 'POST' });
+      if (!res.ok) { oidcError = 'Connexion impossible.'; return; }
+      const session = await res.json();
+      speakerToken = session.accessToken;
+      // Prove the token is accepted end-to-end (and resolve the identity) via /api/oidc/me.
+      const me = await fetch('/api/oidc/me', { headers: { Authorization: `Bearer ${speakerToken}` } });
+      if (!me.ok) { oidcError = 'Connexion impossible.'; return; }
+      speaker = await me.json();
+    } catch {
+      oidcError = 'Connexion impossible.';
+    }
+  }
+
+  onMount(completeOidcLogin);
 
   // --- room state ---
   let token = $state(null);
@@ -182,6 +228,20 @@
       {#if joinError}<p class="error" data-testid="join-error">{joinError}</p>{/if}
       <p class="hint">Pas de compte, pas d'installation — juste le PIN affiché à l'écran.</p>
     </form>
+
+    <div class="speaker-box" data-testid="speaker-box">
+      {#if speaker}
+        <p class="speaker-id" data-testid="speaker-identity">
+          Connecté : {speaker.email} ({speaker.role})
+        </p>
+      {:else}
+        <p class="hint">Vous êtes speaker ?</p>
+        <button type="button" class="ghost" data-testid="speaker-login" onclick={loginAsSpeaker}>
+          Se connecter (Keycloak)
+        </button>
+        {#if oidcError}<p class="error" data-testid="oidc-error">{oidcError}</p>{/if}
+      {/if}
+    </div>
   {:else}
     <section class="room" data-testid="room">
       <div class="bar">
@@ -286,6 +346,12 @@
   button:disabled { background: var(--arago-paper); color: rgba(26, 20, 16, 0.4); cursor: not-allowed; }
   .hint { margin: 0; font-size: 0.85rem; color: rgba(26, 20, 16, 0.7); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
+
+  .speaker-box {
+    display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
+    text-align: center; padding-top: 0.5rem;
+  }
+  .speaker-id { margin: 0; font-weight: 700; color: var(--arago-bordeaux); }
 
   .room { display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
   .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; }

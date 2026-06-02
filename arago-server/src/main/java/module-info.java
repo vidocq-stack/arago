@@ -8,6 +8,9 @@
 module io.vidocq.tools.arago.server {
     requires java.logging;
     requires java.sql;
+    // OIDC front-channel (io.vidocq.tools.arago.oidc): KeycloakOidcClient uses the JDK HttpClient
+    // to exchange the authorization code for a token at Keycloak's token endpoint.
+    requires java.net.http;
     // APT-generated repository impl / CDI proxies importent @Generated (SOURCE-retention).
     requires static java.compiler;
 

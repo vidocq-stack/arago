@@ -24,3 +24,13 @@ Feature: OIDC identity and allowlist enforcement
     When I GET "/api/oidc/me"
     Then the response status is 403
     And the JSON field "error" is "speaker_not_provisioned"
+
+  Scenario: The login endpoint starts an Authorization Code + PKCE flow
+    When I GET "/api/oidc/login"
+    Then the response status is 302
+    And the response header "Location" contains "/protocol/openid-connect/auth"
+    And the response header "Location" contains "response_type=code"
+    And the response header "Location" contains "code_challenge="
+    And the response header "Location" contains "code_challenge_method=S256"
+    And the response header "Location" contains "state="
+    And the response header "Location" contains "redirect_uri="

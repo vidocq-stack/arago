@@ -13,6 +13,16 @@
       "protocol": "openid-connect",
       "redirectUris": [],
       "webOrigins": []
+    },
+    {
+      "clientId": "arago-web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
     }
   ],
   "users": [
@@ -107,6 +117,18 @@
       "email": "ivan@oidc.test",
       "firstName": "Ivan",
       "lastName": "Sutherland",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "judy",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "judy@oidc.test",
+      "firstName": "Judy",
+      "lastName": "Speaker",
       "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }

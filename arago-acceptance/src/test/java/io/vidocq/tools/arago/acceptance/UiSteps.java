@@ -56,6 +56,19 @@ public class UiSteps {
         page.fill("[data-testid='" + testId + "']", value);
     }
 
+    /**
+     * Submits the Keycloak login form (default login theme: {@code #username}, {@code #password},
+     * {@code #kc-login}). Used by the OIDC front-channel scenario, which lands on Keycloak after the
+     * SPA's "Se connecter (Keycloak)" button triggers {@code GET /api/oidc/login} → 302.
+     */
+    @When("I log in to Keycloak as {string} with password {string}")
+    public void i_log_in_to_keycloak(String username, String password) {
+        page.waitForSelector("#username");
+        page.fill("#username", username);
+        page.fill("#password", password);
+        page.click("#kc-login");
+    }
+
     @When("I click {string}")
     public void i_click(String testId) {
         page.click("[data-testid='" + testId + "']");

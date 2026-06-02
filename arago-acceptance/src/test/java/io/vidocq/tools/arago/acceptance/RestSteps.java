@@ -153,6 +153,13 @@ public class RestSteps {
         assertEquals(expected, response.statusCode(), () -> "body: " + response.body());
     }
 
+    @Then("the response header {string} contains {string}")
+    public void the_response_header_contains(String name, String needle) {
+        String value = response.headers().firstValue(name).orElse(null);
+        assertTrue(value != null && value.contains(needle),
+                () -> "expected header '" + name + "' to contain '" + needle + "' but was: " + value);
+    }
+
     @Then("the JSON field {string} is {string}")
     public void the_json_field_is_string(String field, String expected) {
         assertEquals(expected, json().getString(field));
