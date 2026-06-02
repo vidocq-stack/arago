@@ -107,14 +107,31 @@ public class RoomSocket implements WebSocketHandler {
     @Override
     public void onOpen(WebSocket ws, Request handshake) throws IOException {
         String pin = handshake.pathParams().get("pin");
-        String token = extractToken(handshake);
-        if (pin == null || pin.isBlank() || token == null) {
-            ws.close(CloseCodes.POLICY_VIOLATION, "missing pin or token");
+        if (pin == null || pin.isBlank()) {
+            ws.close(CloseCodes.POLICY_VIOLATION, "missing pin");
             return;
         }
         Room room = rooms.findByPin(pin).orElse(null);
         if (room == null || room.getStatus() != RoomStatus.ACTIVE) {
             ws.close(CloseCodes.POLICY_VIOLATION, "room not joinable");
+            return;
+        }
+        // Reveal deck plugin (§4.6): connects with ?secret= instead of a token. It receives reveal.cmd
+        // broadcasts and emits reveal.state — no attendee identity, never claims a seat.
+        String secret = handshake.queryParam("secret").orElse(null);
+        if (secret != null && !secret.isBlank()) {
+            if (!secret.equals(room.getRevealSecret())) {
+                ws.close(CloseCodes.POLICY_VIOLATION, "bad reveal secret");
+                return;
+            }
+            ws.attribute("roomId", room.getId());
+            ws.attribute("role", "reveal");
+            peers.computeIfAbsent(room.getId(), k -> ConcurrentHashMap.newKeySet()).add(ws);
+            return;
+        }
+        String token = extractToken(handshake);
+        if (token == null) {
+            ws.close(CloseCodes.POLICY_VIOLATION, "missing token");
             return;
         }
         AragoJwt.Claims claims;
@@ -185,6 +202,7 @@ public class RoomSocket implements WebSocketHandler {
             case "help-cancel" -> cancelHelp(roomId, pseudo);
             case "seat" -> claimSeat(ws, roomId, pseudo, json);
             case "seat-release" -> releaseSeat(roomId, pseudo);
+            case "reveal.state" -> revealState(ws, roomId, json);
             default -> handleChat(ws, roomId, pseudo, json);
         }
     }
@@ -491,6 +509,33 @@ public class RoomSocket implements WebSocketHandler {
                 .add("type", "moderation")
                 .add("action", action)
                 .add("pseudo", pseudo)
+                .build().toString();
+    }
+
+    /** The reveal deck (role=reveal) reports its slide position (§4.6); rebroadcast to the room. */
+    private void revealState(WebSocket ws, String roomId, JsonObject json) {
+        if (!"reveal".equals(ws.attribute("role"))) {
+            return; // only the secret-authenticated deck plugin may report slide state
+        }
+        broadcast(roomId, revealStateEvent(json));
+    }
+
+    /** Renders a reveal command for the deck plugin ({@code {"type":"reveal.cmd","cmd":…,"slide":…}}). */
+    public static String revealCmdEvent(String cmd, Integer slide) {
+        var b = Json.createObjectBuilder().add("type", "reveal.cmd").add("cmd", cmd);
+        if (slide != null) {
+            b.add("slide", slide);
+        }
+        return b.build().toString();
+    }
+
+    /** Renders the current slide state ({@code {"type":"reveal.state","indexh":…,"indexv":…,"fragment":…}}). */
+    public static String revealStateEvent(JsonObject state) {
+        return Json.createObjectBuilder()
+                .add("type", "reveal.state")
+                .add("indexh", state.getInt("indexh", 0))
+                .add("indexv", state.getInt("indexv", 0))
+                .add("fragment", state.getInt("fragment", -1))
                 .build().toString();
     }
 

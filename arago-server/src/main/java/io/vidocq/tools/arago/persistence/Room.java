@@ -54,6 +54,10 @@ public class Room {
     @Column(name = "ended_at")
     private Instant endedAt;
 
+    /** Secret for the reveal.js remote-control session (§4.6); null until the speaker enables it. */
+    @Column(name = "reveal_secret")
+    private String revealSecret;
+
     public Room() {}
 
     public Room(String id, String pin, String title, RoomStatus status, RoomMode mode,
@@ -85,4 +89,6 @@ public class Room {
     public void       setCreatedAt(Instant at)      { this.createdAt = at;  }
     public Instant    getEndedAt()                  { return endedAt;       }
     public void       setEndedAt(Instant endedAt)   { this.endedAt = endedAt; }
+    public String     getRevealSecret()             { return revealSecret;  }
+    public void       setRevealSecret(String s)     { this.revealSecret = s; }
 }

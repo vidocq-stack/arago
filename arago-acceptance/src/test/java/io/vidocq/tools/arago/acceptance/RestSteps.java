@@ -331,11 +331,31 @@ public class RestSteps {
     @When("I open room WebSocket {string} with token {string}")
     public void i_open_named_room_websocket(String name, String tokenVar) throws Exception {
         String wsBase = AragoApp.baseUrl().replaceFirst("^http", "ws");
-        URI uri = URI.create(wsBase + "/ws/rooms/" + vars.get("pin"));
+        openNamed(name, URI.create(wsBase + "/ws/rooms/" + vars.get("pin")), vars.get(tokenVar));
+    }
+
+    @When("I open room WebSocket {string} with reveal secret {string}")
+    public void i_open_named_ws_with_secret(String name, String secretVar) throws Exception {
+        String wsBase = AragoApp.baseUrl().replaceFirst("^http", "ws");
+        URI uri = URI.create(wsBase + "/ws/rooms/" + vars.get("pin") + "?secret=" + vars.get(secretVar));
+        openNamed(name, uri, null);
+    }
+
+    @When("on WebSocket {string} I report slide {int}")
+    public void on_ws_report_slide(String name, int indexh) throws Exception {
+        String frame = "{\"type\":\"reveal.state\",\"indexh\":" + indexh + ",\"indexv\":0,\"fragment\":-1}";
+        conns.get(name).socket.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
+    /** Opens a named room WebSocket; {@code bearer} null → connect with the URI as-is (e.g. ?secret=…). */
+    private void openNamed(String name, URI uri, String bearer) throws Exception {
         WsConn[] holder = new WsConn[1];
-        java.net.http.WebSocket socket = HttpClient.newHttpClient().newWebSocketBuilder()
-                .header("Authorization", "Bearer " + vars.get(tokenVar))
-                .connectTimeout(Duration.ofSeconds(5))
+        java.net.http.WebSocket.Builder builder = HttpClient.newHttpClient().newWebSocketBuilder()
+                .connectTimeout(Duration.ofSeconds(5));
+        if (bearer != null) {
+            builder = builder.header("Authorization", "Bearer " + bearer);
+        }
+        java.net.http.WebSocket socket = builder
                 .buildAsync(uri, new java.net.http.WebSocket.Listener() {
                     @Override
                     public void onOpen(java.net.http.WebSocket webSocket) {

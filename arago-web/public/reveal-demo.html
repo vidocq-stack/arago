@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arago — Démo reveal</title>
+  </head>
+  <body>
+    <h1>Démo pilotage reveal (Arago)</h1>
+    <p>Slide courante : <strong id="slide" data-testid="slide-index">0</strong></p>
+    <p>Liaison : <strong id="status" data-testid="ws-status">…</strong></p>
+    <script>
+      window.addEventListener('arago-reveal-connected', function () {
+        document.getElementById('status').textContent = 'connected';
+      });
+    </script>
+    <!--
+      Minimal reveal.js-compatible stub: enough of the Reveal API for the Arago plugin to drive it.
+      Doubles as the @ui fixture (no network reveal.js). A real deck would load reveal.js instead.
+    -->
+    <script>
+      (function () {
+        var h = 0;
+        var listeners = {};
+        function render() { document.getElementById('slide').textContent = String(h); }
+        function fire() { (listeners['slidechanged'] || []).forEach(function (f) { f(); }); render(); }
+        window.Reveal = {
+          getIndices: function () { return { h: h, v: 0, f: -1 }; },
+          next: function () { h++; fire(); },
+          prev: function () { if (h > 0) h--; fire(); },
+          slide: function (x) { h = Number(x) || 0; fire(); },
+          togglePause: function () {},
+          on: function (ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+        };
+        render();
+      })();
+    </script>
+    <script src="/arago-reveal-plugin.js"></script>
+  </body>
+</html>

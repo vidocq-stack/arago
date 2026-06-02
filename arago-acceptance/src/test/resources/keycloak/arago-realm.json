@@ -193,6 +193,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "rita",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "rita@oidc.test",
+      "firstName": "Rita",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

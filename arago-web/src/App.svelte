@@ -68,6 +68,7 @@
   let mySeat = $state(null);          // {row,block,seat} | null
   let myHelp = $state(null);          // null | 'PENDING' | 'CLAIMED' | 'RESOLVED' | 'CANCELLED'
   let notice = $state('');            // transient message (e.g. seat taken)
+  let revealFollow = $state(null);    // "H.V" current slide when the speaker drives a reveal deck (§4.6)
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
 
@@ -110,6 +111,7 @@
       case 'layout': layout = m.layout; break;
       case 'seat': onSeat(m); break;
       case 'help': onHelp(m); break;
+      case 'reveal.state': revealFollow = `${m.indexh}.${m.indexv}`; break;
       // chat/pin frames are handled by other views; ignored here.
     }
   }
@@ -256,6 +258,7 @@
       </div>
 
       {#if notice}<p class="notice" data-testid="notice">{notice}</p>{/if}
+      {#if revealFollow}<p class="follow" data-testid="reveal-follow">Slide en cours : {revealFollow}</p>{/if}
 
       {#if geom}
         <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}

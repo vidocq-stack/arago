@@ -32,6 +32,8 @@
   let newPinType = $state('TEXT');
   let newPinContent = $state('');
   let dragFrom = $state(null);
+  let revealInfo = $state(null);     // { secret, pin } after enabling reveal
+  let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
@@ -100,6 +102,7 @@
     room = r;
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
+    revealInfo = null; revealState = null;
     const tk = await fetch(`/api/rooms/${r.id}/observer-token`, { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
@@ -129,6 +132,7 @@
       case 'help': onHelp(m); break;
       case 'pin': onPin(m); break;
       case 'chat': if (m.author) people = { ...people, [m.author]: true }; break;
+      case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
       default: break;
     }
   }
@@ -243,6 +247,19 @@
     if (action === 'mute') muted = { ...muted, [pseudo]: true };
     if (action === 'unmute') { const n = { ...muted }; delete n[pseudo]; muted = n; }
     if (action === 'kick') { const n = { ...people }; delete n[pseudo]; people = n; }
+  }
+
+  // ---------- reveal remote control (§4.6) ----------
+  async function enableReveal() {
+    const res = await fetch(`/api/rooms/${room.id}/reveal/enable`, { method: 'POST', headers: authHeaders() });
+    if (res.ok) revealInfo = await res.json();
+  }
+
+  async function revealCmd(cmd) {
+    await fetch(`/api/rooms/${room.id}/reveal/cmd`, {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd }),
+    });
   }
 
   // ---------- top-down geometry (mirrors App.svelte §4.5) ----------
@@ -388,6 +405,22 @@
             {/each}
           </ul>
         </div>
+
+        {#if room.mode !== 'LAB'}
+          <div class="panel">
+            <h2>Slides (reveal)</h2>
+            {#if !revealInfo}
+              <button type="button" data-testid="reveal-enable" onclick={enableReveal}>Activer le pilotage</button>
+            {:else}
+              <p class="hint">Deck : <code>/reveal-demo?aragoRoom={room.pin}&amp;aragoSecret={revealInfo.secret}</code></p>
+              <div class="bar">
+                <button type="button" data-testid="reveal-prev" onclick={() => revealCmd('prev')}>◀ Précédent</button>
+                <button type="button" data-testid="reveal-next" onclick={() => revealCmd('next')}>Suivant ▶</button>
+                <span data-testid="reveal-state">Slide {revealState ?? '—'}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         {#if Object.keys(people).length}
           <div class="panel">

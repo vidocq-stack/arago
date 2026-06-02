@@ -480,6 +480,46 @@ public class RoomResource {
     /** Observer token + room PIN for the speaker console's live WebSocket. */
     public record ObserverToken(String token, String pin) {}
 
+    // --- Reveal remote control (§4.6): commands are owner-only REST; slide state flows over the WS. ---
+
+    private static final java.util.Set<String> REVEAL_CMDS =
+            java.util.Set.of("next", "prev", "goto", "togglePause");
+
+    /** Enables (idempotently) the reveal session and returns its secret + room PIN for the deck plugin. */
+    @POST
+    @Path("/{id}/reveal/enable")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revealEnable(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = ownedRoomOrAbort(id, ownerSub);
+        if (room.getRevealSecret() == null || room.getRevealSecret().isBlank()) {
+            room.setRevealSecret(UUID.randomUUID().toString());
+            room = rooms.save(room);
+        }
+        return Response.ok(new RevealEnabled(room.getRevealSecret(), room.getPin())).build();
+    }
+
+    /** Owner sends a reveal command; broadcast as {@code reveal.cmd} to the deck plugin (§4.6). */
+    @POST
+    @Path("/{id}/reveal/cmd")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revealCmd(@PathParam("id") String id, RevealCmd request) {
+        String ownerSub = requireProvisionedSpeaker();
+        ownedRoomOrAbort(id, ownerSub);
+        if (request == null || request.cmd() == null || !REVEAL_CMDS.contains(request.cmd())) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        roomSocket.broadcast(id, RoomSocket.revealCmdEvent(request.cmd(), request.slide()));
+        return Response.ok().build();
+    }
+
+    /** Reveal session secret + room PIN (deck URL = {public}/reveal-demo?aragoRoom={pin}&aragoSecret={secret}). */
+    public record RevealEnabled(String secret, String pin) {}
+
+    /** Reveal command body: {@code cmd} ∈ next/prev/goto/togglePause, optional target {@code slide}. */
+    public record RevealCmd(String cmd, Integer slide) {}
+
     /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
     Room ownedRoomOrAbort(String id, String ownerSub) {
         Room room = rooms.findById(id)
