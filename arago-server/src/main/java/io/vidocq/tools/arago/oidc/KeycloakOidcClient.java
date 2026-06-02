@@ -30,6 +30,15 @@ import org.eclipse.microprofile.config.ConfigProvider;
  * <p>Config is read programmatically via {@link ConfigProvider} (not {@code @ConfigProperty}, which the
  * build-time Vauban indexer does not resolve here): {@code arago.oidc.issuer}, {@code arago.oidc.web-client-id}
  * (default {@code arago-web}), {@code arago.public.url} (base for the {@code redirect_uri}).</p>
+ *
+ * <p><strong>Front-channel vs back-channel issuer.</strong> The browser-facing authorization URL and the
+ * server-to-server token exchange may live behind different hostnames: the classic Keycloak-behind-a-proxy
+ * topology, and the local dev compose where the browser reaches Keycloak at {@code localhost:<port>} while
+ * Arago reaches it at {@code keycloak:8080} on the Docker network. The optional
+ * {@code arago.oidc.internal-issuer} overrides only the back-channel ({@link #exchangeCode}); when unset it
+ * defaults to {@code arago.oidc.issuer}, so single-host deployments and the in-process acceptance suite are
+ * unchanged. The token's {@code iss} stays the public issuer (Keycloak's frontend URL), which is also what
+ * {@code mp.jwt.verify.issuer} must match.</p>
  */
 @ApplicationScoped
 public class KeycloakOidcClient {
@@ -66,7 +75,7 @@ public class KeycloakOidcClient {
                 + "&redirect_uri=" + enc(redirectUri())
                 + "&client_id=" + enc(webClientId())
                 + "&code_verifier=" + enc(codeVerifier);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(issuer() + "/protocol/openid-connect/token"))
+        HttpRequest req = HttpRequest.newBuilder(URI.create(tokenEndpoint()))
                 .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("Accept", "application/json")
@@ -99,8 +108,32 @@ public class KeycloakOidcClient {
         return publicBaseUrl() + CALLBACK_PATH;
     }
 
-    private String issuer() {
+    String issuer() {
         return trimTrailingSlash(config("arago.oidc.issuer", null));
+    }
+
+    /**
+     * Back-channel issuer for the token exchange ({@code arago.oidc.internal-issuer}), defaulting to the
+     * public {@link #issuer()} when unset. Lets the Docker-network host ({@code keycloak:8080}) differ from
+     * the browser-facing one ({@code localhost:<port>}) without a workaround.
+     */
+    String internalIssuer() {
+        try {
+            var internal = ConfigProvider.getConfig()
+                    .getOptionalValue("arago.oidc.internal-issuer", String.class)
+                    .filter(s -> !s.isBlank());
+            if (internal.isPresent()) {
+                return trimTrailingSlash(internal.get());
+            }
+        } catch (RuntimeException ignored) {
+            // No MP Config bound (e.g. a bare unit test) — fall back to the public issuer.
+        }
+        return issuer();
+    }
+
+    /** Keycloak token endpoint for the back-channel code exchange (built on the internal issuer). */
+    String tokenEndpoint() {
+        return internalIssuer() + "/protocol/openid-connect/token";
     }
 
     /**

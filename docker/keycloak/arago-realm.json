@@ -1,0 +1,222 @@
+{
+  "realm": "arago",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 600,
+  "clients": [
+    {
+      "clientId": "arago-test",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "arago-web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "ada",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ada@oidc.test",
+      "firstName": "Ada",
+      "lastName": "Lovelace",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bob@oidc.test",
+      "firstName": "Bob",
+      "lastName": "Stranger",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "carol@oidc.test",
+      "firstName": "Carol",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "dave",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "dave@oidc.test",
+      "firstName": "Dave",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "erin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "erin@oidc.test",
+      "firstName": "Erin",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "grace",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "grace@oidc.test",
+      "firstName": "Grace",
+      "lastName": "Hopper",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "heidi",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "heidi@oidc.test",
+      "firstName": "Heidi",
+      "lastName": "Lamarr",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "ivan",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ivan@oidc.test",
+      "firstName": "Ivan",
+      "lastName": "Sutherland",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "judy",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "judy@oidc.test",
+      "firstName": "Judy",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "karl",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "karl@oidc.test",
+      "firstName": "Karl",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "leo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "leo@oidc.test",
+      "firstName": "Leo",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "mona",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "mona@oidc.test",
+      "firstName": "Mona",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "nina",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "nina@oidc.test",
+      "firstName": "Nina",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "owen",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "owen@oidc.test",
+      "firstName": "Owen",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "rita",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "rita@oidc.test",
+      "firstName": "Rita",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "sam",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "sam@oidc.test",
+      "firstName": "Sam",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    }
+  ]
+}

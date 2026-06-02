@@ -59,6 +59,32 @@ Puis :
 - <http://localhost:8080/api/health> — santé MicroProfile (knock) → `{"status":"UP", …}`
 - <http://localhost:8080/api/rooms/count> — compteur de rooms (preuve REST + Mansart)
 
+Cette stack-là ne configure **pas** d'IdP : le bouton « Se connecter (Keycloak) » affiche un message
+« connexion non configurée » (pas de 500), et le superadmin n'a pas de credentials. Pour tester les
+deux consoles, utiliser la stack dev complète ci-dessous.
+
+### Stack dev complète : Arago + PostgreSQL + Keycloak (`docker-compose.localdev.yml`)
+
+Ajoute un Keycloak 26 (realm `arago` pré-importé, 15 users `*@oidc.test` / mot de passe `pw`) **et**
+le compte superadmin break-glass, pour exercer les deux parcours authentifiés en local :
+
+```bash
+mvn -ntp install -DskipTests
+docker compose -f docker-compose.localdev.yml up --build
+```
+
+- **Speaker** — <http://localhost:8080/> → « Se connecter (Keycloak) », puis login Keycloak
+  `ada` / `pw`. `ada@oidc.test` est auto-provisionné dans l'allowlist au boot (rôle ADMIN) via
+  `ARAGO_DEV_SEED_SPEAKER`, donc le login aboutit sans étape d'invitation manuelle.
+- **Superadmin** — <http://localhost:8080/admin> → `root` / `arago-dev`.
+- Console Keycloak admin — <http://localhost:8081/> (`admin` / `admin`).
+
+Le navigateur joint Keycloak en `localhost:8081`, alors qu'Arago le joint en `keycloak:8080` sur le
+réseau Docker : `KeycloakOidcClient` gère ce split via `ARAGO_OIDC_INTERNAL_ISSUER` (échange de code
+back-channel + JWKS), `ARAGO_OIDC_ISSUER` restant l'issuer public (le `iss` du token). C'est le
+scénario classique « Keycloak derrière un reverse-proxy ». **Réservé au dev** : secrets de
+démonstration, realm en `redirectUris: ["*"]`, Keycloak en HTTP, speaker seedé.
+
 ### Dev front avec hot-reload
 
 ```bash

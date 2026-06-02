@@ -31,6 +31,9 @@ public class FlywayMigrator {
     @Inject
     Instance<DataSource> dataSourceInstance;
 
+    @Inject
+    DevSpeakerSeeder devSpeakerSeeder;
+
     void onStart(@Observes @Initialized(ApplicationScoped.class) Object event) {
         DataSource dataSource = dataSourceInstance.get();
         var result = Flyway.configure(getClass().getClassLoader())
@@ -41,5 +44,8 @@ public class FlywayMigrator {
         LOG.info(() -> "Flyway: schema up to date (applied "
                 + result.migrationsExecuted + " migration(s), target "
                 + result.targetSchemaVersion + ")");
+        // Post-migration dev hook: seed the optional demo speaker now that the schema exists. Running it
+        // as its own @Initialized observer would race this one; chaining it here makes the order explicit.
+        devSpeakerSeeder.seedIfConfigured();
     }
 }
