@@ -75,7 +75,9 @@ public class ProfileResource {
         Optional<String> profileId = profiles.findByEmail(email).map(p -> p.getId());
         if (profileId.isPresent()) {
             String token = tokens.issue(profileId.get());
-            String link = publicBaseUrl() + "/api/profile/me?token="
+            // Point at the user-facing "my data" page (served at the clean URL /mes-donnees via Chappe
+            // cleanUrls); the page reads ?token= and calls GET /api/profile/me itself.
+            String link = publicBaseUrl() + "/mes-donnees?token="
                     + URLEncoder.encode(token, StandardCharsets.UTF_8);
             mailer.sendMagicLink(email, link);
             if (devExposeLink()) {

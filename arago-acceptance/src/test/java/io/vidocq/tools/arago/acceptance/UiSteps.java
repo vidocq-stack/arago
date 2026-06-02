@@ -31,7 +31,16 @@ public class UiSteps {
         playwright = Playwright.create();
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
         page = browser.newPage();
-        page.navigate(AragoApp.baseUrl() + path);
+        page.navigate(AragoApp.baseUrl() + subst(path));
+    }
+
+    /** Replaces {name} placeholders in a path with values remembered earlier (e.g. a magic-link token). */
+    private String subst(String path) {
+        String result = path;
+        for (var e : world.vars.entrySet()) {
+            result = result.replace("{" + e.getKey() + "}", e.getValue());
+        }
+        return result;
     }
 
     /** Fills an input with a value captured earlier (e.g. a room PIN created over REST). */

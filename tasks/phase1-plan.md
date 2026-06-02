@@ -100,9 +100,14 @@ job de purge quotidien idempotent, page `/privacy`, filtre logs (no email).
   - Tests : `ProfileDataServiceTest` (anonymisation) ; `profile.feature` E2E (room→attendee+email+consent
     →message persistant WS→magic-link→me/export→erasure→404 ; anti-énumération ; purge 401/200).
     Vert : unit 12/12, acceptance non-@ui **37/37**, @ui 5/5.
-- **Reste I4** (différé) : page SPA « Mes données » (I4b) ; réponse speaker par email + `SmtpMailer` ;
-  purge **programmée** quotidienne (pas de scheduler stack — manuel pour l'instant) ; rétention help/pins
-  par room ENDED + purge des `SECRET` pins à la clôture.
+- **I4b — page « Mes données » livrée 2026-06-02** : entrée Vite `mes-donnees.html` + `src/MyData.svelte`
+  servie à l'URL propre `/mes-donnees` (Chappe `cleanUrls`) ; landing du magic-link (lit `?token=`,
+  `GET /api/profile/me`, affiche profil + messages persistants, boutons Exporter + Supprimer-avec-confirmation
+  → `DELETE`). Le magic-link pointe désormais vers la page (`ProfileResource`). Test @ui `profile-ui.feature`.
+  Vert : acceptance non-@ui 37/37, **@ui 6/6**.
+- **Reste I4** (différé) : réponse speaker par email + `SmtpMailer` (décision zéro-dép SMTP) ; purge
+  **programmée** quotidienne (pas de scheduler stack — manuel via `/api/admin/purge/run`) ; rétention
+  help/pins par âge de room ENDED. (Purge des `SECRET` pins à la clôture : **déjà fait** dans `RoomResource.end`.)
 
 ---
 
