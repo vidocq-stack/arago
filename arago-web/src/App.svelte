@@ -29,6 +29,7 @@
     speaker_not_provisioned: 'oidc.speaker_not_provisioned',
     invalid_state: 'oidc.invalid_state',
     exchange_failed: 'oidc.exchange_failed',
+    oidc_not_configured: 'oidc.not_configured',
   };
 
   function loginAsSpeaker() {

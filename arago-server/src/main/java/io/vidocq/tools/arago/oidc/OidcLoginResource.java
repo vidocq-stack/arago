@@ -54,10 +54,16 @@ public class OidcLoginResource {
     @GET
     @Path("/login")
     public Response login(@QueryParam("return") String returnPath) {
+        String returnTo = sanitizeReturn(returnPath);
+        if (!keycloak.isConfigured()) {
+            // No IdP wired (e.g. the local dev/demo compose without Keycloak) — fail soft so the SPA
+            // shows a friendly message instead of a 500 from a missing arago.oidc.issuer.
+            return redirect(returnTo + "?oidc_error=oidc_not_configured");
+        }
         Pkce.Pair pkce = Pkce.generate();
         String state = Pkce.randomUrlToken(24);
         String nonce = Pkce.randomUrlToken(24);
-        flow.putLogin(state, pkce.verifier(), nonce, sanitizeReturn(returnPath));
+        flow.putLogin(state, pkce.verifier(), nonce, returnTo);
         return redirect(keycloak.authorizeUrl(state, nonce, pkce.challenge()));
     }
 

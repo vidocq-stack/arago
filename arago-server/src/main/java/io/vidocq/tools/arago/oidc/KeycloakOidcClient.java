@@ -103,6 +103,20 @@ public class KeycloakOidcClient {
         return trimTrailingSlash(config("arago.oidc.issuer", null));
     }
 
+    /**
+     * Whether an identity provider is wired (the issuer is the one mandatory, default-less key). False
+     * in a stack that ships Arago without OIDC (e.g. the local dev/demo compose with no Keycloak), so
+     * callers can fail soft instead of throwing on {@code arago.oidc.issuer}.
+     */
+    public boolean isConfigured() {
+        try {
+            return ConfigProvider.getConfig().getOptionalValue("arago.oidc.issuer", String.class)
+                    .filter(s -> !s.isBlank()).isPresent();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     private String webClientId() {
         return config("arago.oidc.web-client-id", "arago-web");
     }
