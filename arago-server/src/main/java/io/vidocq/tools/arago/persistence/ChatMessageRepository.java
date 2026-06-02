@@ -15,6 +15,8 @@ import java.util.List;
  *       joining WebSocket client).</li>
  *   <li>{@link #findByPersistentFalseAndPurgeAfterLessThan(Instant)} — selects ephemeral messages
  *       past their purge instant; the daily purge job deletes whatever this returns (§4.7).</li>
+ *   <li>{@link #findByProfileId(String)} — every message authored by a given attendee profile; the
+ *       RGPD self-service uses it to list (export) and to anonymise on erasure (§4.7).</li>
  * </ul>
  */
 @Transactional
@@ -26,4 +28,6 @@ public interface ChatMessageRepository extends BasicRepository<ChatMessage, Stri
     List<ChatMessage> findByRoomIdOrderByAtAsc(String roomId);
 
     List<ChatMessage> findByPersistentFalseAndPurgeAfterLessThan(Instant cutoff);
+
+    List<ChatMessage> findByProfileId(String profileId);
 }

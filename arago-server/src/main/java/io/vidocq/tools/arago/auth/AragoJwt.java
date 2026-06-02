@@ -43,6 +43,8 @@ public final class AragoJwt {
     public static final String AUDIENCE_ADMIN = "arago-admin";
     /** Audience for attendee tokens (cf. §4.2). */
     public static final String AUDIENCE_ATTENDEE = "arago-attendee";
+    /** Audience for attendee RGPD magic-link tokens (cf. §4.7). */
+    public static final String AUDIENCE_PROFILE = "arago-profile";
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final String JWT_ALG = "HS256";

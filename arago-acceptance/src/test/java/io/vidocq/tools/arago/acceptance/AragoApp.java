@@ -109,6 +109,10 @@ public final class AragoApp {
                 new PasswordHasher().hash(SUPERADMIN_PASSWORD.toCharArray()));
         System.setProperty("arago.attendee.hmac-secret", HMAC_SECRET);
 
+        // RGPD §4.7: no SMTP in tests — expose the magic link in the POST /api/profile/magic-link
+        // response so the acceptance flow can follow it end-to-end (prod default is false).
+        System.setProperty("arago.mail.dev-expose-link", "true");
+
         runtime = VidocqBootstrap.create().configure().start();
         awaitHealthy(baseUrl);
 

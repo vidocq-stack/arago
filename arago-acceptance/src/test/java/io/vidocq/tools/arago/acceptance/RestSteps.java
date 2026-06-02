@@ -231,6 +231,13 @@ public class RestSteps {
         ws.sendText(frame, true).get(5, TimeUnit.SECONDS);
     }
 
+    @When("I send the persistent chat message {string}")
+    public void i_send_the_persistent_chat_message(String body) throws Exception {
+        String frame = "{\"body\":\"" + body.replace("\\", "\\\\").replace("\"", "\\\"")
+                + "\",\"persistent\":true}";
+        ws.sendText(frame, true).get(5, TimeUnit.SECONDS);
+    }
+
     @When("I send the help request {string}")
     public void i_send_the_help_request(String message) throws Exception {
         String frame = "{\"type\":\"help\",\"message\":\""

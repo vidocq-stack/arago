@@ -85,6 +85,25 @@ Join attendee (pseudo + email opt-in + **consentement non pré-coché**), `Atten
 `reply-email` speaker (sans voir l'email), magic link + page « Mes données » + droit à l'oubli,
 job de purge quotidien idempotent, page `/privacy`, filtre logs (no email).
 
+### État (MAJ 2026-06-02) — droits RGPD backend livrés ✅
+- **Déjà là** : join attendee + email opt-in + consentement non-pré-coché, `AttendeeProfile`,
+  `ChatMessage.persistent`, `privacy.html`.
+- **Livré 2026-06-02 — droits de la personne (backend) §4.7** :
+  - `io.vidocq.tools.arago.profile` : `ProfileTokens` (magic-link HS256, `aud=arago-profile`, TTL
+    `arago.magic-link.ttl-minutes`=15) ; `ProfileDataService` (accès/portabilité + erasure =
+    anonymise messages `profileId=null`/`authorPseudo="anonyme"` + supprime le profil) ;
+    `PurgeService` (éphémères expirés) ; `ProfileResource` `/api/profile` (`POST /magic-link` 202
+    anti-énumération + dev-expose, `GET /me`, `GET /me/export`, `DELETE /me`) ; `AdminPurgeResource`
+    `POST /api/admin/purge/run` (superadmin + audit).
+  - `io.vidocq.tools.arago.mail` : SPI `Mailer` + `LoggingMailer` (pas de SMTP ; `SmtpMailer` plus tard).
+  - `ChatMessageRepository.findByProfileId` ; `opens` profile + mail ; `arago.mail.dev-expose-link`.
+  - Tests : `ProfileDataServiceTest` (anonymisation) ; `profile.feature` E2E (room→attendee+email+consent
+    →message persistant WS→magic-link→me/export→erasure→404 ; anti-énumération ; purge 401/200).
+    Vert : unit 12/12, acceptance non-@ui **37/37**, @ui 5/5.
+- **Reste I4** (différé) : page SPA « Mes données » (I4b) ; réponse speaker par email + `SmtpMailer` ;
+  purge **programmée** quotidienne (pas de scheduler stack — manuel pour l'instant) ; rétention help/pins
+  par room ENDED + purge des `SECRET` pins à la clôture.
+
 ---
 
 ## Ordre de commit (I1)

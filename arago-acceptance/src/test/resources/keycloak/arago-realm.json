@@ -133,6 +133,18 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "karl",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "karl@oidc.test",
+      "firstName": "Karl",
+      "lastName": "Speaker",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }

@@ -59,6 +59,8 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.metrics;
     opens io.vidocq.tools.arago.admin;
     opens io.vidocq.tools.arago.oidc;
+    opens io.vidocq.tools.arago.profile;
+    opens io.vidocq.tools.arago.mail;
 
     // Flyway (automatic module) scans the classpath for migrations; resources in a named module's
     // packages are encapsulated, so open the migration "package" to make them discoverable.
