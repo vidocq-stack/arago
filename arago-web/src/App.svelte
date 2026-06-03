@@ -33,7 +33,9 @@
   };
 
   function loginAsSpeaker() {
-    window.location.assign('/api/oidc/login');
+    // Speakers belong on the speaker console, not back on the attendee/join page: land there after the
+    // Keycloak round-trip (Speaker.svelte then exchanges the one-time ticket and shows the console).
+    window.location.assign('/api/oidc/login?return=/speaker');
   }
 
   async function completeOidcLogin() {

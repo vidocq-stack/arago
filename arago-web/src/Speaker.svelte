@@ -50,8 +50,13 @@
     const ok = params.get('login') === 'ok';
     const err = params.get('oidc_error');
     if (ok || err) window.history.replaceState({}, '', window.location.pathname);
-    if (err) { authError = err === 'speaker_not_provisioned'
-        ? 'Compte non autorisé (demandez à un administrateur).' : 'Connexion impossible.'; return; }
+    if (err) {
+      authError =
+        err === 'speaker_not_provisioned' ? 'Compte non provisionné — demandez à un administrateur.'
+        : err === 'oidc_not_configured' ? "La connexion par identité n'est pas configurée sur ce serveur."
+        : 'Connexion impossible.';
+      return;
+    }
     if (!ok) return;
     try {
       const res = await fetch('/api/oidc/token', { method: 'POST' });
