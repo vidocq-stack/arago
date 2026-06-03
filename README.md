@@ -74,8 +74,11 @@ docker compose -f docker-compose.localdev.yml up --build
 ```
 
 - **Speaker** — <http://localhost:8080/> → « Se connecter (Keycloak) », puis login Keycloak
-  `ada` / `pw`. `ada@oidc.test` est auto-provisionné dans l'allowlist au boot (rôle ADMIN) via
-  `ARAGO_DEV_SEED_SPEAKER`, donc le login aboutit sans étape d'invitation manuelle.
+  `speakera` ou `speakerb` / `pw`. Les deux sont auto-provisionnés dans l'allowlist au boot via
+  `ARAGO_DEV_SEED_SPEAKER` (`speakerA` en rôle ADMIN, `speakerB` en SPEAKER), donc le login aboutit
+  sans invitation manuelle. La liste accepte plusieurs emails séparés par des virgules, chacun en
+  `email` ou `email=ROLE`. Les autres users du realm (`ada`, `bob`, … `pw`) ne sont pas seedés —
+  parfaits pour tester le flux superadmin → inviter (`POST /api/admin/speakers`) → login.
 - **Superadmin** — <http://localhost:8080/admin> → `root` / `arago-dev`.
 - Console Keycloak admin — <http://localhost:8081/> (`admin` / `admin`).
 

@@ -8,6 +8,8 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.ConfigProvider;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -21,9 +23,11 @@ import java.util.logging.Logger;
  * <em>after</em> migrations so the {@code speakers} table exists; running it as an independent
  * {@code @Initialized(ApplicationScoped.class)} observer would race the migrator.</p>
  *
- * <p>Config: {@code arago.dev.seed-speaker} (email, required to act), {@code arago.dev.seed-speaker.role}
- * ({@code SPEAKER}|{@code ADMIN}, default {@code SPEAKER}), {@code arago.dev.seed-speaker.name} (display
- * name, optional). Idempotent: an existing email is left untouched.</p>
+ * <p>Config: {@code arago.dev.seed-speaker} — a comma-separated list of emails, each optionally carrying
+ * its role as {@code email=ROLE} (e.g. {@code speakera@oidc.test=ADMIN,speakerb@oidc.test}). A bare email
+ * uses {@code arago.dev.seed-speaker.role} ({@code SPEAKER}|{@code ADMIN}, default {@code SPEAKER}). The
+ * display name is {@code arago.dev.seed-speaker.name} when set, otherwise the email's local part. Each
+ * entry is idempotent: an existing email is left untouched.</p>
  */
 @ApplicationScoped
 public class DevSpeakerSeeder {
@@ -41,25 +45,66 @@ public class DevSpeakerSeeder {
         this.speakers = speakers;
     }
 
-    /** Reads {@code arago.dev.seed-speaker} (+ role/name) and seeds it; a blank/absent email is a no-op. */
+    /** Reads {@code arago.dev.seed-speaker} (+ role/name) and seeds each entry; a blank/absent value is a no-op. */
     public void seedIfConfigured() {
         var config = ConfigProvider.getConfig();
-        String email = config.getOptionalValue("arago.dev.seed-speaker", String.class)
+        String raw = config.getOptionalValue("arago.dev.seed-speaker", String.class)
                 .filter(s -> !s.isBlank()).orElse(null);
-        if (email == null) {
+        if (raw == null) {
             return;
         }
-        Role role = config.getOptionalValue("arago.dev.seed-speaker.role", String.class)
+        Role defaultRole = config.getOptionalValue("arago.dev.seed-speaker.role", String.class)
                 .filter(s -> !s.isBlank())
                 .map(s -> Role.valueOf(s.trim().toUpperCase()))
                 .orElse(Role.SPEAKER);
-        String name = config.getOptionalValue("arago.dev.seed-speaker.name", String.class)
+        String defaultName = config.getOptionalValue("arago.dev.seed-speaker.name", String.class)
                 .filter(s -> !s.isBlank()).orElse(null);
-        boolean created = seedSpeaker(email, role, name);
-        if (created) {
-            LOG.warning(() -> "Dev seed: provisioned speaker " + email.trim().toLowerCase()
-                    + " (" + role + ") — DISABLE in production (arago.dev.seed-speaker)");
+        for (SeedEntry entry : parseSeedSpec(raw, defaultRole, defaultName)) {
+            if (seedSpeaker(entry.email(), entry.role(), entry.displayName())) {
+                LOG.warning(() -> "Dev seed: provisioned speaker " + entry.email()
+                        + " (" + entry.role() + ") — DISABLE in production (arago.dev.seed-speaker)");
+            }
         }
+    }
+
+    /** One parsed {@code arago.dev.seed-speaker} entry. */
+    record SeedEntry(String email, Role role, String displayName) {}
+
+    /**
+     * Parses a comma-separated {@code arago.dev.seed-speaker} value into entries. Each token is an email,
+     * optionally suffixed with {@code =ROLE}; a missing/blank role falls back to {@code defaultRole}. The
+     * display name is {@code defaultName} when non-null, else the email's local part. Blank tokens are skipped.
+     */
+    static List<SeedEntry> parseSeedSpec(String raw, Role defaultRole, String defaultName) {
+        List<SeedEntry> entries = new ArrayList<>();
+        for (String token : raw.split(",")) {
+            String t = token.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            String email = t;
+            Role role = defaultRole;
+            int eq = t.indexOf('=');
+            if (eq >= 0) {
+                email = t.substring(0, eq).trim();
+                String r = t.substring(eq + 1).trim();
+                if (!r.isEmpty()) {
+                    role = Role.valueOf(r.toUpperCase());
+                }
+            }
+            if (email.isEmpty()) {
+                continue;
+            }
+            email = email.toLowerCase();
+            String name = defaultName != null ? defaultName : localPart(email);
+            entries.add(new SeedEntry(email, role, name));
+        }
+        return entries;
+    }
+
+    private static String localPart(String email) {
+        int at = email.indexOf('@');
+        return at > 0 ? email.substring(0, at) : email;
     }
 
     /**

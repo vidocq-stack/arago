@@ -88,12 +88,11 @@ services:
       # Signs attendee/profile/superadmin HS256 tokens. Dev-only — rotate in prod.
       ARAGO_ATTENDEE_HMAC_SECRET: arago-localdev-only-hmac-secret-change-me
 
-      # Dev convenience: provision one speaker into the allowlist at boot so a Keycloak login lands
-      # as a speaker with no manual invite. OFF in prod (key simply unset). ADMIN so the demo account
-      # can also moderate and see all rooms.
-      ARAGO_DEV_SEED_SPEAKER: ada@oidc.test
-      ARAGO_DEV_SEED_SPEAKER_NAME: Ada Lovelace
-      ARAGO_DEV_SEED_SPEAKER_ROLE: ADMIN
+      # Dev convenience: provision speakers into the allowlist at boot so a Keycloak login lands as a
+      # speaker with no manual invite. Comma-separated list, each "email" or "email=ROLE". OFF in prod
+      # (key simply unset). Here: speakerA as ADMIN (moderates, sees all rooms) + speakerB as SPEAKER —
+      # both log in to Keycloak with password "pw" (realm users speakera / speakerb).
+      ARAGO_DEV_SEED_SPEAKER: speakera@oidc.test=ADMIN,speakerb@oidc.test=SPEAKER
 
       # RGPD §4.7: no SMTP locally — expose the magic link in the POST /api/profile/magic-link response.
       ARAGO_MAIL_DEV_EXPOSE_LINK: "true"

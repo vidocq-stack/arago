@@ -54,6 +54,42 @@ class DevSpeakerSeederTest {
         assertEquals(Role.SPEAKER, repo.findByEmail("ada@oidc.test").orElseThrow().getRole());
     }
 
+    @Test
+    void parsesACommaSeparatedListWithPerEntryRoleOverride() {
+        var entries = DevSpeakerSeeder.parseSeedSpec(
+                " speakera@oidc.test=ADMIN , speakerb@oidc.test ", Role.SPEAKER, null);
+
+        assertEquals(2, entries.size());
+        assertEquals("speakera@oidc.test", entries.get(0).email());
+        assertEquals(Role.ADMIN, entries.get(0).role(), "explicit =ADMIN overrides the default");
+        assertEquals("speakera", entries.get(0).displayName(), "name derived from the email local part");
+        assertEquals("speakerb@oidc.test", entries.get(1).email());
+        assertEquals(Role.SPEAKER, entries.get(1).role(), "no override -> default role");
+    }
+
+    @Test
+    void parseSeedSpecHonoursAnExplicitDefaultNameAndSkipsBlankTokens() {
+        var entries = DevSpeakerSeeder.parseSeedSpec("a@x , , b@x ", Role.ADMIN, "Demo");
+
+        assertEquals(2, entries.size());
+        assertEquals(Role.ADMIN, entries.get(0).role(), "blank role falls back to the default");
+        assertEquals("Demo", entries.get(0).displayName(), "explicit default name wins over derivation");
+    }
+
+    @Test
+    void seedsEveryParsedEntryExactlyOnce() {
+        var repo = new FakeSpeakerRepository();
+        var seeder = new DevSpeakerSeeder(repo);
+
+        for (var e : DevSpeakerSeeder.parseSeedSpec("a@x=ADMIN,b@x", Role.SPEAKER, null)) {
+            seeder.seedSpeaker(e.email(), e.role(), e.displayName());
+        }
+
+        assertEquals(2, repo.count());
+        assertEquals(Role.ADMIN, repo.findByEmail("a@x").orElseThrow().getRole());
+        assertEquals(Role.SPEAKER, repo.findByEmail("b@x").orElseThrow().getRole());
+    }
+
     /** In-memory {@link SpeakerRepository} keyed by email; only the seeder's two operations are real. */
     private static final class FakeSpeakerRepository implements SpeakerRepository {
         private final Map<String, Speaker> byEmail = new HashMap<>();
