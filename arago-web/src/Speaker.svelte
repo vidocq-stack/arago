@@ -45,6 +45,12 @@
     window.location.assign('/api/oidc/login?return=/speaker');
   }
 
+  // Opens the public attendee/projector screen for a room (title + PIN + live headcount) in a new tab,
+  // so the speaker can project it. Public page (no auth) keyed by the room PIN — see Display.svelte.
+  function openDisplay(r) {
+    window.open(`/display?pin=${encodeURIComponent(r.pin)}`, '_blank', 'noopener');
+  }
+
   onMount(async () => {
     const params = new URLSearchParams(window.location.search);
     const ok = params.get('login') === 'ok';
@@ -350,6 +356,7 @@
               <li>
                 <button type="button" class="link" data-testid="open-room" onclick={() => openRoom(r)}>{r.title}</button>
                 <span class="meta">{r.mode} · {r.status} · PIN {r.pin}</span>
+                <button type="button" class="ghost" data-testid="display-room" onclick={() => openDisplay(r)}>Afficher</button>
                 <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
               </li>
             {/each}

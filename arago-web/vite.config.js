@@ -20,6 +20,7 @@ export default defineConfig({
         admin: 'admin.html',
         mydata: 'mes-donnees.html',
         speaker: 'speaker.html',
+        display: 'display.html',
       },
     },
   },

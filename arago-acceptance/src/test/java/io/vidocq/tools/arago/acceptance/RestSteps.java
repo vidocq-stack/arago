@@ -80,6 +80,13 @@ public class RestSteps {
         response = http.send(authed(request(path)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /** Drops any held credentials so a subsequent call is anonymous (e.g. the public lobby endpoint). */
+    @When("I forget my token")
+    public void i_forget_my_token() {
+        bearer = null;
+        adminToken = null;
+    }
+
     @Then("I remember {string} from the JSON field {string}")
     public void i_remember_from_json_field(String name, String field) {
         vars.put(name, json().getString(field));

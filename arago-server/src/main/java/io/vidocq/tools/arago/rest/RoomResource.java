@@ -204,6 +204,27 @@ public class RoomResource {
         return Response.ok(new JoinResponse(room.getId(), room.getMode().name(), token, profileId)).build();
     }
 
+    /**
+     * Public room lobby for the projected attendee screen (cf. arago-spec §4.1): the room title + PIN to
+     * join, plus a live headcount the display page polls. No authentication — the PIN is the public join
+     * credential anyone in the room is shown, and the title is the public talk name; whoever sees the PIN
+     * can already join. {@code 404} if the PIN matches no room.
+     */
+    @GET
+    @Path("/lobby/{pin}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response lobby(@PathParam("pin") String pin) {
+        Room room = rooms.findByPin(pin == null ? "" : pin.trim()).orElse(null);
+        if (room == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        return Response.ok(new LobbyView(room.getTitle(), room.getPin(), room.getMode().name(),
+                room.getStatus().name(), roomSocket.liveAttendeeCount(room.getId()))).build();
+    }
+
+    /** Public lobby view for the projected attendee screen: room title + PIN + live headcount. */
+    public record LobbyView(String title, String pin, String mode, String status, int attendees) {}
+
     /** A BLOCKS layout is valid when it has at least one row and one non-empty, positively-sized block. */
     private static boolean isValidLayout(LayoutSpec layout) {
         if (layout == null || layout.rows() <= 0 || layout.blocks() == null || layout.blocks().isEmpty()) {
@@ -478,7 +499,7 @@ public class RoomResource {
     public Response observerToken(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
         Room room = ownedRoomOrAbort(id, ownerSub);
-        String token = attendeeTokens.issue(room.getId(), "speaker", null);
+        String token = attendeeTokens.issue(room.getId(), RoomSocket.OBSERVER_PSEUDO, null);
         return Response.ok(new ObserverToken(token, room.getPin())).build();
     }
 

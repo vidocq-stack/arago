@@ -43,6 +43,10 @@ const DICT = {
     'prefs.language': 'Langue',
     'prefs.theme': 'Thème',
     'prefs.theme-toggle': 'Basculer le thème clair / sombre',
+    'display.pin': 'Code de la room',
+    'display.attendees': 'personnes connectées',
+    'display.ended': 'Session terminée',
+    'display.notfound': 'Room introuvable',
   },
   en: {
     'tagline': 'Speaker & Lab Companion',
@@ -83,6 +87,10 @@ const DICT = {
     'prefs.language': 'Language',
     'prefs.theme': 'Theme',
     'prefs.theme-toggle': 'Toggle light / dark theme',
+    'display.pin': 'Room code',
+    'display.attendees': 'people connected',
+    'display.ended': 'Session ended',
+    'display.notfound': 'Room not found',
   },
 };
 

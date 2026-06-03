@@ -97,6 +97,9 @@ public class RoomSocket implements WebSocketHandler {
     @Inject
     SeatRepository seatRepo;
 
+    /** Pseudo carried by the speaker's read-only observer socket (see {@code RoomResource.observerToken}). */
+    public static final String OBSERVER_PSEUDO = "speaker";
+
     /** roomId → open sockets, for broadcast. ConcurrentHashMap + key-set is virtual-thread-safe. */
     private final Map<String, Set<WebSocket>> peers = new ConcurrentHashMap<>();
 
@@ -444,6 +447,26 @@ public class RoomSocket implements WebSocketHandler {
         for (WebSocket peer : set) {
             trySend(peer, payload);
         }
+    }
+
+    /**
+     * Live headcount of distinct attendees currently connected to the room — the number the public
+     * lobby/display screen polls. Excludes the speaker's read-only observer ({@link #OBSERVER_PSEUDO})
+     * and the reveal deck (no pseudo); distinct by pseudo, so an attendee with several tabs counts once.
+     */
+    public int liveAttendeeCount(String roomId) {
+        Set<WebSocket> set = peers.get(roomId);
+        if (set == null) {
+            return 0;
+        }
+        Set<String> distinct = new java.util.HashSet<>();
+        for (WebSocket peer : set) {
+            String pseudo = (String) peer.attribute("pseudo");
+            if (pseudo != null && !pseudo.equals(OBSERVER_PSEUDO)) {
+                distinct.add(pseudo);
+            }
+        }
+        return distinct.size();
     }
 
     // --- Moderation (§7), invoked by the owner-speaker via RoomResource. State is in memory, per room. ---

@@ -217,6 +217,30 @@
       "credentials": [
         { "type": "password", "value": "pw", "temporary": false }
       ]
+    },
+    {
+      "username": "speakera",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "speakera@oidc.test",
+      "firstName": "Speaker",
+      "lastName": "A",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
+    },
+    {
+      "username": "speakerb",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "speakerb@oidc.test",
+      "firstName": "Speaker",
+      "lastName": "B",
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "pw", "temporary": false }
+      ]
     }
   ]
 }
