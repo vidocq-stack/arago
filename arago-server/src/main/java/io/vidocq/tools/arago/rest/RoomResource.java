@@ -37,6 +37,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -496,10 +497,15 @@ public class RoomResource {
     @POST
     @Path("/{id}/observer-token")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response observerToken(@PathParam("id") String id) {
+    public Response observerToken(@PathParam("id") String id, @QueryParam("name") String name) {
         String ownerSub = requireProvisionedSpeaker();
         Room room = ownedRoomOrAbort(id, ownerSub);
-        String token = attendeeTokens.issue(room.getId(), RoomSocket.OBSERVER_PSEUDO, null);
+        // The display name the speaker's chat appears under (default "speaker"); capped, never blank.
+        String pseudo = (name == null || name.isBlank()) ? RoomSocket.OBSERVER_PSEUDO : name.trim();
+        if (pseudo.length() > 40) {
+            pseudo = pseudo.substring(0, 40);
+        }
+        String token = attendeeTokens.issue(room.getId(), pseudo, null, true);
         return Response.ok(new ObserverToken(token, room.getPin())).build();
     }
 

@@ -82,6 +82,9 @@
   let chatInput = $state('');
   let chatBox = $state(null);         // scroll container ref (auto-scroll to newest)
 
+  // --- pinned content the speaker surfaces (§4.4); SECRET pins stay speaker-only. ---
+  let pins = $state([]);              // [{id, pinType, content, lang, previewTitle, previewImage, ...}]
+
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
 
   async function join(e) {
@@ -101,6 +104,7 @@
       token = data.token;
       roomMode = data.mode;
       myPseudo = pseudo.trim();
+      seats = {}; mySeat = null; myHelp = null; chat = []; pins = [];
       connect();
       view = 'room';
     } catch {
@@ -125,8 +129,21 @@
       case 'help': onHelp(m); break;
       case 'reveal.state': revealFollow = `${m.indexh}.${m.indexv}`; break;
       case 'chat': onChat(m); break;
-      // pin frames are not surfaced in the attendee view.
+      case 'pin': onPin(m); break;
     }
+  }
+
+  function onPin(m) {
+    if (m.action === 'remove' && m.pin) {
+      pins = pins.filter((p) => p.id !== m.pin.id);
+      return;
+    }
+    if (m.action === 'add' && m.pin) {
+      if (m.pin.pinType === 'SECRET') return; // secrets are never surfaced to attendees
+      pins = [...pins.filter((p) => p.id !== m.pin.id), m.pin]
+        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+    }
+    // 'reorder' is cosmetic for attendees — left as received.
   }
 
   function onChat(m) {
@@ -323,6 +340,26 @@
 
       {#if notice}<p class="notice" data-testid="notice">{t(notice)}</p>{/if}
       {#if revealFollow}<p class="follow" data-testid="reveal-follow">{t('room.reveal-follow', { slide: revealFollow })}</p>{/if}
+
+      {#if pins.length}
+        <section class="pins" data-testid="pins">
+          <h2 class="pins-title">{t('pins.title')}</h2>
+          <ul>
+            {#each pins as p (p.id)}
+              <li class="pin" data-testid="pin">
+                {#if p.pinType === 'URL'}
+                  {#if p.previewImage}<img class="pin-img" src={p.previewImage} alt="" />{/if}
+                  <a href={p.content} target="_blank" rel="noopener noreferrer">{p.previewTitle || p.content}</a>
+                {:else if p.pinType === 'CODE'}
+                  <pre class="pin-code"><code>{p.content}</code></pre>
+                {:else}
+                  <span class="pin-text">{p.content}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
 
       <div class="room-body" class:two-col={!!geom}>
         {#if geom}
@@ -533,6 +570,22 @@
   .empty { background: none; color: var(--arago-muted); align-self: center; }
   .chat-form { display: flex; gap: 0.5rem; }
   .chat-form input { flex: 1; min-width: 0; }
+
+  /* Pinned content surfaced by the speaker (§4.4). */
+  .pins { width: 100%; }
+  .pins-title { margin: 0 0 0.4rem; font-size: 1rem; color: var(--arago-bordeaux); }
+  .pins ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .pin {
+    background: var(--arago-surface); border: 1px solid var(--arago-gold);
+    border-radius: 0.5rem; padding: 0.5rem 0.7rem; display: flex; align-items: center; gap: 0.6rem;
+  }
+  .pin a { color: var(--arago-bordeaux); font-weight: 600; word-break: break-word; }
+  .pin-img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; flex-shrink: 0; }
+  .pin-code {
+    margin: 0; width: 100%; overflow-x: auto; background: var(--arago-paper);
+    padding: 0.5rem; border-radius: 0.4rem; font-size: 0.85rem;
+  }
+  .pin-text { white-space: pre-wrap; word-break: break-word; }
 
   footer { margin-top: auto; text-align: center; font-size: 0.85rem; }
   footer a { color: var(--arago-bordeaux); }

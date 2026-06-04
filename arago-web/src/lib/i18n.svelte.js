@@ -51,6 +51,7 @@ const DICT = {
     'chat.empty': 'Aucun message pour l’instant.',
     'chat.placeholder': 'Votre message…',
     'chat.send': 'Envoyer',
+    'pins.title': 'Épinglé',
   },
   en: {
     'tagline': 'Speaker & Lab Companion',
@@ -99,6 +100,7 @@ const DICT = {
     'chat.empty': 'No messages yet.',
     'chat.placeholder': 'Your message…',
     'chat.send': 'Send',
+    'pins.title': 'Pinned',
   },
 };
 

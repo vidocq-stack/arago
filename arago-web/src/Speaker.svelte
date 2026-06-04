@@ -39,6 +39,16 @@
   let chatLog = $state([]);          // [{id, author, body, fromSpeaker}] live + replayed chat
   let chatInput = $state('');
   let chatBox = $state(null);        // chat scroll container ref
+  // Display name the speaker's chat appears under (persisted; applied when a room is opened).
+  let speakerName = $state(readSpeakerName());
+
+  function readSpeakerName() {
+    try { return localStorage.getItem('arago.speaker.name') || 'Speaker'; } catch { return 'Speaker'; }
+  }
+  function saveSpeakerName(v) {
+    speakerName = v;
+    try { localStorage.setItem('arago.speaker.name', v); } catch { /* ignore */ }
+  }
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
@@ -119,7 +129,8 @@
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
-    const tk = await fetch(`/api/rooms/${r.id}/observer-token`, { method: 'POST', headers: authHeaders() });
+    const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerName)}`,
+      { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
     await loadHelp();
@@ -188,7 +199,7 @@
       author: m.author || '?',
       body: m.body || '',
       fromSpeaker: !!m.fromSpeaker,
-      mine: m.author === 'speaker', // the observer connects as the "speaker" pseudo
+      mine: !!m.fromSpeaker, // this console is the speaker; its own messages are flagged fromSpeaker
     }].slice(-200);
   }
 
@@ -501,7 +512,13 @@
         </div>
 
         <div class="panel">
-          <h2>Chat</h2>
+          <div class="bar">
+            <h2>Chat</h2>
+            <label class="speaker-name">Mon pseudo
+              <input data-testid="speaker-name" value={speakerName}
+                     onchange={(e) => saveSpeakerName(e.target.value.trim() || 'Speaker')} />
+            </label>
+          </div>
           <ul class="chat-msgs" data-testid="speaker-chat" bind:this={chatBox}>
             {#each chatLog as m (m.id)}
               <li class="cmsg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>

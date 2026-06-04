@@ -24,6 +24,15 @@ public class AttendeeTokens {
 
     /** Issues an attendee token for a room; {@code profileId} may be null (pseudo-only attendee). */
     public String issue(String roomId, String pseudo, String profileId) {
+        return issue(roomId, pseudo, profileId, false);
+    }
+
+    /**
+     * Issues a room token. When {@code speaker} is true the token carries the {@code spk} marker, so the
+     * WebSocket flags this peer as the speaker (its chat is {@code fromSpeaker}, and it is left out of the
+     * public attendee headcount). Used by the speaker console's observer connection.
+     */
+    public String issue(String roomId, String pseudo, String profileId, boolean speaker) {
         AragoJwt verifier = jwt();
         if (verifier == null) {
             throw new IllegalStateException("arago.attendee.hmac-secret is not configured");
@@ -33,6 +42,9 @@ public class AttendeeTokens {
         extra.put("pseudo", pseudo);
         if (profileId != null) {
             extra.put("profileId", profileId);
+        }
+        if (speaker) {
+            extra.put("spk", "1");
         }
         String subject = profileId != null ? profileId : UUID.randomUUID().toString();
         return verifier.issue(subject, "attendee", AragoJwt.AUDIENCE_ATTENDEE, attendeeTtl(), extra);

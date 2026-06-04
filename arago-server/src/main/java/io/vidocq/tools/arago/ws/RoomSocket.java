@@ -153,6 +153,9 @@ public class RoomSocket implements WebSocketHandler {
         String profileId = claims.extra().get("profileId");
         ws.attribute("roomId", room.getId());
         ws.attribute("pseudo", pseudo);
+        if ("1".equals(claims.extra().get("spk"))) {
+            ws.attribute("speaker", "1"); // the speaker console's observer: chat is fromSpeaker, not counted
+        }
         if (profileId != null && !profileId.isBlank()) {
             ws.attribute("profileId", profileId);
         }
@@ -241,8 +244,9 @@ public class RoomSocket implements WebSocketHandler {
             }
         }
 
+        boolean fromSpeaker = ws.attribute("speaker") != null;
         ChatMessage saved = messages.save(new ChatMessage(UUID.randomUUID().toString(), roomId, profileId,
-                pseudo, false, persistent, body, now, purgeAfter, validated));
+                pseudo, fromSpeaker, persistent, body, now, purgeAfter, validated));
         broadcast(roomId, render(saved));
     }
 
@@ -461,6 +465,9 @@ public class RoomSocket implements WebSocketHandler {
         }
         Set<String> distinct = new java.util.HashSet<>();
         for (WebSocket peer : set) {
+            if (peer.attribute("speaker") != null) {
+                continue; // the speaker's observer connection is not an attendee
+            }
             String pseudo = (String) peer.attribute("pseudo");
             if (pseudo != null && !pseudo.equals(OBSERVER_PSEUDO)) {
                 distinct.add(pseudo);
