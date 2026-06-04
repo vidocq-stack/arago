@@ -834,3 +834,55 @@ d'acceptation v1 (§12) deviennent autant de scénarios exécutables.
   la fin.
 - Reste **stack-pur** : Cucumber/Testcontainers/Playwright sont des dépendances **de test
   uniquement** (`<scope>test</scope>`), donc compatibles avec la règle zéro-dép runtime (§15.3).
+
+## 17. Évolutions post-v1 (itérations 2026-06)
+
+Fonctionnalités ajoutées après les phases 0–6. Cette section fait foi pour ces comportements.
+
+### 17.1 Identité attendee (pseudo unique + renommage)
+
+- À l'entrée dans une room, le pseudo saisi est **suffixé par `#nnn`** (3 chiffres aléatoires, ex.
+  `Ada#427`) pour éviter les collisions entre attendees homonymes. Le pseudo **final** (avec suffixe)
+  est renvoyé par `POST /api/rooms/join` (champ `pseudo`) et **affiché à l'attendee** dans la room.
+- L'attendee peut **changer son pseudo** en cours de session (message WebSocket `{"type":"rename",
+  "pseudo":"<nouveau>"}`). Le serveur ré-suffixe `#nnn`, mute/ban suivent le pseudo, met à jour les
+  **sièges actifs** et **demandes d'aide actives** de cet attendee, puis **diffuse** un évènement
+  `{"type":"rename","old":…,"new":…}`. Tous les clients **propagent** : ré-étiquetage des sièges, de
+  l'auteur dans le chat (messages passés et futurs) et de la file d'aide. Le pseudo est l'identité WS
+  (porté par le token attendee) ; un renommage met à jour l'attribut de session sans reconnexion.
+
+### 17.2 Cycle de vie d'une room : suppression
+
+- En plus de **Terminer** (`POST /api/rooms/{id}/end`, passe la room en `ENDED`), le propriétaire peut
+  **Supprimer** la room : `DELETE /api/rooms/{id}` (owner **principal** uniquement). Suppression en
+  **cascade** : messages de chat, pins, demandes d'aide, sièges, attachments de la room. Le bouton de
+  l'UI demande une **confirmation** (« Êtes-vous sûr ? ») avant l'appel.
+
+### 17.3 Co-gestion d'une room (co-speakers)
+
+- Le **créateur** d'une room en est l'**admin principal** : seul lui peut **Terminer** et **Supprimer**
+  la room, et **inviter/exclure** des co-speakers.
+- Le propriétaire peut **inviter un autre speaker** (provisionné dans l'allowlist) à **co-gérer** une
+  room, et l'**exclure**. Un co-speaker a les droits de gestion (pins, modération, layout, reveal,
+  observer/chat speaker, historique/exports) mais **ni Terminer ni Supprimer ni gérer les invitations**.
+- Modèle de données : table `room_managers (room_id, speaker_sub, …)` ; l'autorisation des endpoints de
+  gestion accepte le propriétaire **ou** un co-speaker ; `end`/`delete`/invitations restent **owner-only**.
+- `GET /api/rooms` liste les rooms **possédées ou co-gérées**. Pour une room **non possédée**, l'UI
+  affiche le **nom du propriétaire** (le `RoomView` expose le display-name de l'owner).
+
+### 17.4 Récapitulatif des fonctionnalités déjà livrées (réf.)
+
+- **Écran d'accueil projetable** : page publique `/display?pin=` (titre + PIN + compteur live), endpoint
+  public `GET /api/rooms/lobby/{pin}`. Bouton « Afficher » dans la console.
+- **Chat in-room** : vue room attendee **2 colonnes** (plan de salle compact / chat) ; le plan est mis en
+  avant **tant que l'attendee n'a pas choisi de place**, puis passe sur le côté une fois assis. Console
+  speaker : panneau Chat (lire + écrire sous un pseudo speaker, badge ★, `fromSpeaker`, hors compteur).
+- **Pièces jointes chat** : images/fichiers (📎) stockés en **blob PostgreSQL** (`attachments`),
+  `POST /api/rooms/{id}/attachments` (≤ 5 Mio, SVG bloqué), `GET /api/attachments/{id}` public par UUID,
+  purge RGPD via `purge_after`.
+- **Pins enrichis & visibles attendee** : TEXT/URL/CODE + **IMAGE/FILE** (attachment) + **QR** (URL → QR
+  scannable généré côté client, module `lib/qrcode.js` zéro-dép). `SECRET` reste réservé au speaker.
+- **Sièges** : occupés **hachurés** (lisibilité libre/occupé), **pseudo de l'occupant au survol**.
+- **Notifications sonores** : bip à un nouvel appel d'aide (speaker) et à la prise en charge (attendee).
+- **Stack dev locale** `docker-compose.localdev.yml` : Arago + PostgreSQL + Keycloak (realm pré-importé,
+  speakers de démo seedés), split issuer front/back-channel pour OIDC.
