@@ -17,6 +17,8 @@ import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomMode;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
+import io.vidocq.tools.arago.persistence.Seat;
+import io.vidocq.tools.arago.persistence.SeatRepository;
 import io.vidocq.tools.arago.rooms.AttendeeTokens;
 import io.vidocq.tools.arago.rooms.CreatePinRequest;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
@@ -33,6 +35,7 @@ import io.vidocq.tools.arago.ws.RoomSocket;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
@@ -115,6 +118,9 @@ public class RoomResource {
     @Inject
     AttachmentStore attachmentStore;
 
+    @Inject
+    SeatRepository seatRepo;
+
     /** Max upload size (5 MiB) — images/QR/small files; the rest is rejected with 413. */
     private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -183,6 +189,38 @@ public class RoomResource {
             }
             return Response.ok(RoomView.of(room)).build();
         }).orElseGet(() -> Response.status(Response.Status.NOT_FOUND).build());
+    }
+
+    /**
+     * Deletes a room and all its content (§17.2) — owner (primary admin) only. Cascade: chat messages,
+     * pins, help requests, seats and attachments. {@code 404} if unknown, {@code 403} if not the owner.
+     */
+    @DELETE
+    @Path("/{id}")
+    public Response delete(@PathParam("id") String id) {
+        String ownerSub = requireProvisionedSpeaker();
+        Room room = rooms.findById(id)
+                .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        if (!ownerSub.equals(room.getOwnerSub())) {
+            throw new WebApplicationException(Response.Status.FORBIDDEN); // delete is primary-admin only
+        }
+        for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(id)) {
+            messages.deleteById(m.getId());
+        }
+        for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(id)) {
+            pinRepo.deleteById(p.getId());
+        }
+        for (HelpRequest h : helpRepo.findByRoomIdOrderByCreatedAtAsc(id)) {
+            helpRepo.deleteById(h.getId());
+        }
+        for (boolean released : new boolean[] {false, true}) {
+            for (Seat s : seatRepo.findByRoomIdAndReleased(id, released)) {
+                seatRepo.deleteById(s.getId());
+            }
+        }
+        attachmentStore.deleteByRoom(id);
+        rooms.deleteById(id);
+        return Response.noContent().build();
     }
 
     /**

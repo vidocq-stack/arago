@@ -66,6 +66,17 @@ public class AttachmentStore {
         }
     }
 
+    /** Deletes every attachment of a room (cascade when the room is deleted, §17.2). */
+    public int deleteByRoom(String roomId) {
+        try (Connection c = dataSource.get().getConnection();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM attachments WHERE room_id = ?")) {
+            ps.setString(1, roomId);
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("attachment delete-by-room failed", e);
+        }
+    }
+
     /** Deletes attachments past their {@code purge_after} (RGPD retention); returns how many were removed. */
     public int deleteExpired(Instant now) {
         String sql = "DELETE FROM attachments WHERE purge_after IS NOT NULL AND purge_after < ?";

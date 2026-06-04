@@ -130,6 +130,18 @@
     await loadRooms();
   }
 
+  async function deleteRoom(r) {
+    // eslint-disable-next-line no-alert
+    if (!confirm(`Supprimer définitivement la room « ${r.title} » ? Tout son contenu sera effacé.`)) return;
+    const res = await fetch(`/api/rooms/${r.id}`, { method: 'DELETE', headers: authHeaders() });
+    if (res.ok) {
+      if (room && room.id === r.id) closeRoom();
+      await loadRooms();
+    } else {
+      roomError = 'Suppression impossible.';
+    }
+  }
+
   // ---------- open a room (live observer) ----------
   async function openRoom(r) {
     closeRoom();
@@ -463,6 +475,7 @@
                 <span class="meta">{r.mode} · {r.status} · PIN {r.pin}</span>
                 <button type="button" class="ghost" data-testid="display-room" onclick={() => openDisplay(r)}>Afficher</button>
                 <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
+                <button type="button" class="ghost danger" data-testid="delete-room" onclick={() => deleteRoom(r)}>Supprimer</button>
               </li>
             {/each}
           </ul>
@@ -713,6 +726,7 @@
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .pin-thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; }
+  .ghost.danger { color: var(--arago-danger); border-color: var(--arago-danger); }
   .pin-qr { flex-shrink: 0; background: #fff; padding: 0.25rem; border-radius: 0.3rem; }
   .pin-qr :global(svg) { display: block; }
   .edit-toggle { font-size: 0.85rem; }
