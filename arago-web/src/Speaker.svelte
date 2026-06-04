@@ -165,10 +165,13 @@
   }
 
   function onHelp(m) {
+    const known = helps.some((h) => h.id === m.id);
     const active = m.status === 'PENDING' || m.status === 'CLAIMED';
     const others = helps.filter((h) => h.id !== m.id);
     helps = active ? [...others, m] : others;
     if (m.attendee) people = { ...people, [m.attendee]: true };
+    // A brand-new pending request (not part of the initial replay) — chime for the speaker.
+    if (m.status === 'PENDING' && !known) beep(880, 220);
   }
 
   function onPin(m) {
@@ -201,6 +204,24 @@
     chatLog.length;
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
   });
+
+  // Short zero-dependency notification beep (WebAudio) — fires when a new help request arrives.
+  let audioCtx = null;
+  function beep(freq = 880, ms = 200) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = 0.07;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + ms / 1000);
+    } catch { /* audio unavailable */ }
+  }
 
   // ---------- help queue ----------
   async function loadHelp() {
@@ -421,13 +442,22 @@
           <div class="maprow">
             <label class="edit-toggle"><input type="checkbox" data-testid="edit-layout" bind:checked={editing} /> Éditer le plan</label>
             <svg class="map" data-testid="speaker-map" viewBox={`0 0 ${geom.width} ${geom.height}`} width={geom.width} height={geom.height}>
+              <defs>
+                <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="7" height="7" fill="var(--arago-paper)" />
+                  <line x1="0" y1="0" x2="0" y2="7" stroke="var(--arago-bordeaux)" stroke-width="2.5" opacity="0.6" />
+                </pattern>
+              </defs>
               <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
               <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">Scène</text>
               {#each geom.cells as c (c.r + '-' + c.b + '-' + c.s)}
                 {@const cls = seatCls(c.r, c.b, c.s)}
+                {@const who = seats[seatKey(c.r, c.b, c.s)]}
                 <rect class={`seat ${cls}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={cls}
                       x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
-                      role="button" tabindex="0" onclick={() => toggleSeat(c.r, c.b, c.s)} />
+                      role="button" tabindex="0" onclick={() => toggleSeat(c.r, c.b, c.s)}>
+                  {#if who}<title>{who}</title>{/if}
+                </rect>
               {/each}
             </svg>
           </div>
@@ -591,7 +621,7 @@
   .stage-txt { fill: var(--arago-cream); font-size: 12px; letter-spacing: 0.2em; }
   .seat { stroke: rgba(26,20,16,0.25); stroke-width: 1; cursor: pointer; }
   .seat.free { fill: var(--arago-cream); }
-  .seat.occupied { fill: var(--arago-paper); }
+  .seat.occupied { fill: url(#hatch); stroke: var(--arago-bordeaux); }
   .seat.blocked { fill: #b9b2a3; }
   .seat.help { fill: var(--arago-gold); stroke: var(--arago-bordeaux); stroke-width: 2; }
   footer { margin-top: auto; text-align: center; font-size: 0.85rem; }

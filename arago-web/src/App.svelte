@@ -153,6 +153,25 @@
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
   });
 
+  // Short zero-dependency notification beep (WebAudio). The browser unlocks audio after the user's
+  // join click, so the context can resume by the time an event fires.
+  let audioCtx = null;
+  function beep(freq = 880, ms = 180) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = 0.07;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + ms / 1000);
+    } catch { /* audio unavailable */ }
+  }
+
   function onSeat(m) {
     const key = seatKey(m.row, m.block, m.seat);
     if (m.action === 'taken') {
@@ -177,7 +196,10 @@
 
   function onHelp(m) {
     if (m.attendee === myPseudo) {
+      const was = myHelp;
       myHelp = m.status;
+      // The speaker is on the way: chime so the attendee notices even if looking away.
+      if (m.status === 'CLAIMED' && was !== 'CLAIMED') beep(660, 220);
     }
   }
 
@@ -307,6 +329,12 @@
           <div class="seat-col">
             <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
                  width={geom.width} height={geom.height} role="group" aria-label={t('room.map-aria')}>
+              <defs>
+                <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="7" height="7" fill="var(--arago-paper)" />
+                  <line x1="0" y1="0" x2="0" y2="7" stroke="var(--arago-bordeaux)" stroke-width="2.5" opacity="0.6" />
+                </pattern>
+              </defs>
               <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
               <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">{t('room.stage')}</text>
 
@@ -319,11 +347,15 @@
 
               {#each geom.cells as c (c.r + '-' + c.b + '-' + c.s)}
                 {@const st = seatState(c.r, c.b, c.s)}
+                {@const who = seats[seatKey(c.r, c.b, c.s)]}
                 <rect class={`seat ${st}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={st}
                       x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
-                      role="button" tabindex="0" aria-label={`R${c.r + 1} S${c.s + 1}`}
+                      role="button" tabindex="0"
+                      aria-label={who ? `R${c.r + 1} S${c.s + 1} — ${who}` : `R${c.r + 1} S${c.s + 1}`}
                       onclick={() => claim(c.r, c.b, c.s)}
-                      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && claim(c.r, c.b, c.s)} />
+                      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && claim(c.r, c.b, c.s)}>
+                  {#if who}<title>{who}</title>{/if}
+                </rect>
               {/each}
             </svg>
 
@@ -447,7 +479,7 @@
   .seat { stroke: var(--arago-line); stroke-width: 1; cursor: pointer; }
   .seat.free { fill: var(--arago-cream); }
   .seat.free:hover { fill: var(--arago-paper); }
-  .seat.occupied { fill: var(--arago-paper); stroke: var(--arago-line); cursor: not-allowed; }
+  .seat.occupied { fill: url(#hatch); stroke: var(--arago-bordeaux); cursor: not-allowed; }
   .seat.blocked { fill: #b9b2a3; cursor: not-allowed; }
   .seat.mine { fill: var(--arago-bordeaux); stroke: var(--arago-ink); }
   .seat.mine-help { fill: var(--arago-gold); stroke: var(--arago-bordeaux); stroke-width: 2; }
@@ -456,7 +488,10 @@
   .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
   .sw { width: 0.9rem; height: 0.9rem; border-radius: 3px; border: 1px solid var(--arago-line); }
   .sw.free { background: var(--arago-cream); }
-  .sw.occupied { background: var(--arago-paper); }
+  .sw.occupied {
+    background: repeating-linear-gradient(45deg,
+      var(--arago-paper), var(--arago-paper) 3px, var(--arago-bordeaux) 3px, var(--arago-bordeaux) 4px);
+  }
   .sw.mine { background: var(--arago-bordeaux); }
   .sw.blocked { background: #b9b2a3; }
 
