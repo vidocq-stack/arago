@@ -70,7 +70,40 @@
     }
   }
 
-  onMount(completeOidcLogin);
+  // --- attendee session persistence: survive a page refresh without leaving the room. ---
+  const SESSION_KEY = 'arago.attendee';
+
+  function clearSession() {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+  }
+
+  function restoreSession() {
+    let s = null;
+    try { s = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch { s = null; }
+    if (!s || !s.token || !s.roomId) return false;
+    token = s.token;
+    roomId = s.roomId;
+    pin = s.pin || '';
+    myPseudo = s.pseudo || '';
+    roomMode = s.mode || null;
+    seats = {}; mySeat = null; myHelp = null; chat = []; pins = [];
+    view = 'room';
+    connect();
+    // Best-effort: re-take the seat held before the refresh, once the layout/seats have replayed.
+    if (s.seat) {
+      const w = s.seat;
+      setTimeout(() => {
+        if (!mySeat && geom && !isOccupied(w.row, w.block, w.seat) && !isBlocked(w.row, w.block, w.seat)) {
+          claim(w.row, w.block, w.seat);
+        }
+      }, 900);
+    }
+    return true;
+  }
+
+  onMount(() => {
+    if (!restoreSession()) completeOidcLogin();
+  });
 
   // --- room state ---
   let token = $state(null);
@@ -130,6 +163,16 @@
     const url = `${proto}://${location.host}/ws/rooms/${pinDigits}?token=${encodeURIComponent(token)}`;
     const socket = new WebSocket(url);
     socket.onmessage = (ev) => onFrame(ev.data);
+    socket.onclose = () => {
+      // Disconnected (kicked, room ended/deleted, or a dropped/closed socket): leave cleanly to the
+      // join screen rather than freezing on a dead room. A refresh reconnects via restoreSession().
+      if (ws === socket && view === 'room') {
+        clearSession();
+        ws = null;
+        view = 'join';
+        joinError = 'join.disconnected';
+      }
+    };
     ws = socket;
   }
 
@@ -232,6 +275,18 @@
   $effect(() => {
     chat.length;
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  });
+
+  // Persist the attendee session (token, room, pseudo, seat) so a page refresh restores the room.
+  // sessionStorage is per-tab and survives a reload but not a tab close — exactly the desired scope.
+  $effect(() => {
+    if (view === 'room' && token) {
+      try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+          token, roomId, pin: pinDigits, pseudo: myPseudo, mode: roomMode, seat: mySeat,
+        }));
+      } catch { /* private mode / no storage */ }
+    }
   });
 
   // Short zero-dependency notification beep (WebAudio). The browser unlocks audio after the user's

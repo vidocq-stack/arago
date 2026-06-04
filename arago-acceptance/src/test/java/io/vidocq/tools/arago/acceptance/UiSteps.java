@@ -98,6 +98,11 @@ public class UiSteps {
         page.click("[data-testid='" + testId + "']");
     }
 
+    @When("I reload the page")
+    public void i_reload_the_page() {
+        page.reload();
+    }
+
     @Then("I see {string}")
     public void i_see(String text) {
         // Playwright auto-waits for the element to appear (handles the async fetch/render).

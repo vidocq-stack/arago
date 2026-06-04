@@ -24,3 +24,6 @@ Feature: Attendee chat in the room view
     And I fill "chat-input" with "bonjour la room"
     And I click "chat-send"
     Then I see "bonjour la room"
+    # A page refresh keeps the attendee in the room (session restored) and replays the chat.
+    When I reload the page
+    Then I see "bonjour la room"
