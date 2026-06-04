@@ -555,6 +555,9 @@ public class RoomSocket implements WebSocketHandler {
     /** Kicks a pseudo: bans them for the room's lifetime and closes their open sockets. Returns sockets closed. */
     public int kick(String roomId, String pseudo) {
         bannedByRoom.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(pseudo);
+        // Free the kicked attendee's seat(s) explicitly: a server-initiated close may not fire onClose,
+        // so we cannot rely on it to release the seat (§4.5). Idempotent if onClose also runs.
+        releaseSeat(roomId, pseudo);
         int closed = 0;
         for (WebSocket ws : socketsOf(roomId, pseudo)) {
             try {
