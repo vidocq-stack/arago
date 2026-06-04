@@ -93,6 +93,10 @@
   // --- pinned content the speaker surfaces (§4.4); SECRET pins stay speaker-only. ---
   let pins = $state([]);              // [{id, pinType, content, lang, previewTitle, previewImage, ...}]
 
+  // --- pseudo rename (§17.1) ---
+  let renaming = $state(false);
+  let renameInput = $state('');
+
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
 
   async function join(e) {
@@ -112,7 +116,7 @@
       token = data.token;
       roomId = data.roomId;
       roomMode = data.mode;
-      myPseudo = pseudo.trim();
+      myPseudo = data.pseudo; // final pseudo, suffixed #nnn server-side (§17.1)
       seats = {}; mySeat = null; myHelp = null; chat = []; pins = [];
       connect();
       view = 'room';
@@ -139,7 +143,32 @@
       case 'reveal.state': revealFollow = `${m.indexh}.${m.indexv}`; break;
       case 'chat': onChat(m); break;
       case 'pin': onPin(m); break;
+      case 'rename': onRename(m); break;
     }
+  }
+
+  function onRename(m) {
+    if (m.old === myPseudo) myPseudo = m.new;
+    // rekey seats held by the renamed attendee
+    const next = {};
+    for (const [k, v] of Object.entries(seats)) next[k] = v === m.old ? m.new : v;
+    seats = next;
+    // relabel their chat messages (past + the "mine" flag)
+    chat = chat.map((c) => (!c.fromSpeaker && c.author === m.old)
+      ? { ...c, author: m.new, mine: m.new === myPseudo } : c);
+  }
+
+  function startRename() {
+    renameInput = myPseudo ? myPseudo.replace(/#\d+$/, '') : '';
+    renaming = true;
+  }
+
+  function submitRename(e) {
+    e?.preventDefault();
+    const base = renameInput.trim();
+    renaming = false;
+    if (!base || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'rename', pseudo: base })); // server re-suffixes #nnn + broadcasts
   }
 
   function onPin(m) {
@@ -360,6 +389,18 @@
     <section class="room" data-testid="room">
       <div class="bar">
         <span class="mode">{roomMode === 'LAB' || roomMode === 'HYBRID' ? t('room.workshop') : t('room.conference')}</span>
+        <span class="me">
+          {#if renaming}
+            <form class="rename" onsubmit={submitRename}>
+              <input data-testid="rename-input" autocomplete="off" maxlength="40" bind:value={renameInput} />
+              <button type="submit" data-testid="rename-save">OK</button>
+            </form>
+          {:else}
+            <span data-testid="my-pseudo">{t('room.you', { pseudo: myPseudo })}</span>
+            <button type="button" class="rename-btn" data-testid="rename-btn"
+                    aria-label={t('room.rename')} title={t('room.rename')} onclick={startRename}>✎</button>
+          {/if}
+        </span>
         {#if mySeat}
           <span class="seatlbl" data-testid="my-seat-label">
             {t('room.seat', {
@@ -406,7 +447,7 @@
         </section>
       {/if}
 
-      <div class="room-body" class:two-col={!!geom}>
+      <div class="room-body" class:two-col={!!geom && !!mySeat}>
         {#if geom}
           <div class="seat-col">
             <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
@@ -555,6 +596,11 @@
     padding: 0.15rem 0.7rem; border-radius: 999px; font-size: 0.85rem;
   }
   .seatlbl { font-weight: 600; }
+  .me { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; }
+  .rename-btn { background: none; border: none; color: var(--arago-bordeaux); cursor: pointer; font-size: 0.95rem; padding: 0 0.2rem; }
+  .rename { display: inline-flex; gap: 0.3rem; }
+  .rename input { width: 7rem; padding: 0.2rem 0.4rem; }
+  .rename button { padding: 0.2rem 0.5rem; }
   .notice {
     margin: 0; align-self: stretch; text-align: center;
     background: var(--arago-warn); color: var(--arago-cream);

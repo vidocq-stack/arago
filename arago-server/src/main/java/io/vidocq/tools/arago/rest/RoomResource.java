@@ -215,8 +215,12 @@ public class RoomResource {
                     request.consentTextVersion());
         }
 
-        String token = attendeeTokens.issue(room.getId(), pseudo, profileId);
-        return Response.ok(new JoinResponse(room.getId(), room.getMode().name(), token, profileId)).build();
+        // Suffix #nnn (3 random digits) to avoid collisions between homonymous attendees (§17.1).
+        String finalPseudo = pseudo + "#" + String.format("%03d",
+                java.util.concurrent.ThreadLocalRandom.current().nextInt(1000));
+        String token = attendeeTokens.issue(room.getId(), finalPseudo, profileId);
+        return Response.ok(
+                new JoinResponse(room.getId(), room.getMode().name(), token, profileId, finalPseudo)).build();
     }
 
     /**

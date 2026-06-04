@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Room chat WebSocket (cf. arago-spec §4.3/§4.6). Declaratively mounted at {@code /ws/rooms/{pin}}
@@ -208,6 +209,7 @@ public class RoomSocket implements WebSocketHandler {
             case "help-cancel" -> cancelHelp(roomId, pseudo);
             case "seat" -> claimSeat(ws, roomId, pseudo, json);
             case "seat-release" -> releaseSeat(roomId, pseudo);
+            case "rename" -> renameAttendee(ws, roomId, pseudo, json);
             case "reveal.state" -> revealState(ws, roomId, json);
             default -> handleChat(ws, roomId, pseudo, json);
         }
@@ -399,6 +401,53 @@ public class RoomSocket implements WebSocketHandler {
         for (Seat freed : releaseActiveSeats(roomId, pseudo, null)) {
             broadcast(roomId, seatEvent("free", freed));
         }
+    }
+
+    /**
+     * Attendee renames themselves mid-session (§17.1): re-suffix {@code #nnn}, carry the mute state,
+     * relabel their active seats and help requests, then broadcast a {@code rename} event so every peer
+     * propagates the change (seats, chat author, help queue). The speaker's observer renames via its
+     * console (a fresh observer token), not here.
+     */
+    private void renameAttendee(WebSocket ws, String roomId, String oldPseudo, JsonObject json) {
+        if (ws.attribute("speaker") != null) {
+            return;
+        }
+        String base = json.getString("pseudo", "").trim();
+        if (base.isEmpty() || base.length() > 40) {
+            return;
+        }
+        String newPseudo = base + "#" + String.format("%03d", ThreadLocalRandom.current().nextInt(1000));
+        if (newPseudo.equals(oldPseudo)) {
+            return;
+        }
+        ws.attribute("pseudo", newPseudo);
+        Set<String> muted = mutedByRoom.get(roomId);
+        if (muted != null && muted.contains(oldPseudo)) {
+            muted.add(newPseudo);
+        }
+        for (Seat s : seatRepo.findByRoomIdAndReleased(roomId, false)) {
+            if (oldPseudo.equals(s.getAttendeePseudo())) {
+                s.setAttendeePseudo(newPseudo);
+                broadcast(roomId, seatEvent("taken", seatRepo.save(s)));
+            }
+        }
+        for (HelpRequest h : helpRepo.findByRoomIdAndAttendeePseudo(roomId, oldPseudo)) {
+            if (h.getStatus() == HelpStatus.PENDING || h.getStatus() == HelpStatus.CLAIMED) {
+                h.setAttendeePseudo(newPseudo);
+                broadcast(roomId, helpEvent(helpRepo.save(h)));
+            }
+        }
+        broadcast(roomId, renameEvent(oldPseudo, newPseudo));
+    }
+
+    /** Renders a rename event ({@code {"type":"rename","old":…,"new":…}}); clients relabel everywhere. */
+    static String renameEvent(String oldPseudo, String newPseudo) {
+        return Json.createObjectBuilder()
+                .add("type", "rename")
+                .add("old", oldPseudo)
+                .add("new", newPseudo)
+                .build().toString();
     }
 
     /** The attendee's current (active) seat in the room, or null if unseated. */
