@@ -8,9 +8,19 @@ import io.vidocq.tools.arago.persistence.Room;
  * seating {@code layout}. {@code ownerSub} is intentionally omitted (internal identity).
  */
 public record RoomView(String id, String pin, String title, String mode, String status,
-                       String createdAt, String endedAt, LayoutSpec layout) {
+                       String createdAt, String endedAt, LayoutSpec layout,
+                       boolean owned, String ownerName) {
 
+    /** View of a room the caller owns (the common case): {@code owned=true}, no owner name needed. */
     public static RoomView of(Room r) {
+        return of(r, true, null);
+    }
+
+    /**
+     * View flagging whether the caller {@code owned}s the room; for a co-managed room {@code ownerName}
+     * is the primary admin's display name to show in the list (§17.3).
+     */
+    public static RoomView of(Room r, boolean owned, String ownerName) {
         return new RoomView(
                 r.getId(),
                 r.getPin(),
@@ -19,6 +29,8 @@ public record RoomView(String id, String pin, String title, String mode, String 
                 r.getStatus() == null ? null : r.getStatus().name(),
                 r.getCreatedAt() == null ? null : r.getCreatedAt().toString(),
                 r.getEndedAt() == null ? null : r.getEndedAt().toString(),
-                LayoutCodec.fromJson(r.getLayoutJson()));
+                LayoutCodec.fromJson(r.getLayoutJson()),
+                owned,
+                ownerName);
     }
 }

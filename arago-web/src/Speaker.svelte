@@ -47,6 +47,8 @@
   let chatLog = $state([]);          // [{id, author, body, fromSpeaker}] live + replayed chat
   let chatInput = $state('');
   let chatBox = $state(null);        // chat scroll container ref
+  let managersList = $state([]);     // co-speakers of the open room (owner view)
+  let inviteEmail = $state('');
   // Display name the speaker's chat appears under (persisted; applied when a room is opened).
   let speakerName = $state(readSpeakerName());
 
@@ -149,6 +151,7 @@
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
+    managersList = []; inviteEmail = '';
     const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerName)}`,
       { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
@@ -156,6 +159,7 @@
     await loadHelp();
     await loadPins();
     await loadStats();
+    if (r.owned) await loadManagers();
     connect(pin, obsToken);
   }
 
@@ -393,6 +397,30 @@
     });
   }
 
+  // ---------- co-speakers (§17.3, owner only) ----------
+  async function loadManagers() {
+    const res = await fetch(`/api/rooms/${room.id}/managers`, { headers: authHeaders() });
+    managersList = res.ok ? await res.json() : [];
+  }
+
+  async function addManager(e) {
+    e?.preventDefault();
+    const email = inviteEmail.trim();
+    if (!email) return;
+    const res = await fetch(`/api/rooms/${room.id}/managers`, {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (res.ok) { inviteEmail = ''; await loadManagers(); }
+    else roomError = 'Invitation impossible (speaker non provisionné ?).';
+  }
+
+  async function removeManager(email) {
+    await fetch(`/api/rooms/${room.id}/managers/${encodeURIComponent(email)}`,
+      { method: 'DELETE', headers: authHeaders() });
+    await loadManagers();
+  }
+
   // ---------- history & exports (§11 Phase 5) ----------
   async function loadStats() {
     const res = await fetch(`/api/rooms/${room.id}/stats`, { headers: authHeaders() });
@@ -473,9 +501,12 @@
               <li>
                 <button type="button" class="link" data-testid="open-room" onclick={() => openRoom(r)}>{r.title}</button>
                 <span class="meta">{r.mode} · {r.status} · PIN {r.pin}</span>
+                {#if !r.owned}<span class="meta owner" data-testid="room-owner">par {r.ownerName}</span>{/if}
                 <button type="button" class="ghost" data-testid="display-room" onclick={() => openDisplay(r)}>Afficher</button>
-                <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
-                <button type="button" class="ghost danger" data-testid="delete-room" onclick={() => deleteRoom(r)}>Supprimer</button>
+                {#if r.owned}
+                  <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
+                  <button type="button" class="ghost danger" data-testid="delete-room" onclick={() => deleteRoom(r)}>Supprimer</button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -621,6 +652,26 @@
             <button type="submit" data-testid="speaker-chat-send" disabled={!chatInput.trim()}>Envoyer</button>
           </form>
         </div>
+
+        {#if room.owned}
+          <div class="panel">
+            <h2>Co-speakers</h2>
+            <form class="pin-add" onsubmit={addManager}>
+              <input data-testid="invite-email" type="email" placeholder="email@speaker" bind:value={inviteEmail} />
+              <button type="submit" data-testid="invite-manager">Inviter</button>
+            </form>
+            <ul class="people">
+              {#each managersList as mgr (mgr.email)}
+                <li data-testid="manager-item">
+                  <span>{mgr.displayName || mgr.email}</span>
+                  <button type="button" class="ghost danger" data-testid="remove-manager"
+                          onclick={() => removeManager(mgr.email)}>Exclure</button>
+                </li>
+              {/each}
+              {#if !managersList.length}<li class="hint">Aucun co-speaker.</li>{/if}
+            </ul>
+          </div>
+        {/if}
 
         {#if room.mode !== 'LAB'}
           <div class="panel">

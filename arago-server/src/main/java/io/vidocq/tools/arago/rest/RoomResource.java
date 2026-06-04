@@ -15,10 +15,14 @@ import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.PinType;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomMode;
+import io.vidocq.tools.arago.persistence.RoomManager;
+import io.vidocq.tools.arago.persistence.RoomManagerRepository;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.RoomStatus;
 import io.vidocq.tools.arago.persistence.Seat;
 import io.vidocq.tools.arago.persistence.SeatRepository;
+import io.vidocq.tools.arago.persistence.Speaker;
+import io.vidocq.tools.arago.persistence.SpeakerRepository;
 import io.vidocq.tools.arago.rooms.AttendeeTokens;
 import io.vidocq.tools.arago.rooms.CreatePinRequest;
 import io.vidocq.tools.arago.rooms.CreateRoomRequest;
@@ -121,6 +125,12 @@ public class RoomResource {
     @Inject
     SeatRepository seatRepo;
 
+    @Inject
+    RoomManagerRepository managers;
+
+    @Inject
+    SpeakerRepository speakers;
+
     /** Max upload size (5 MiB) — images/QR/small files; the rest is rejected with 413. */
     private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -150,21 +160,40 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listMine() {
         String ownerSub = requireProvisionedSpeaker();
-        List<RoomView> views = rooms.findByOwnerSubOrderByCreatedAtDesc(ownerSub)
-                .stream().map(RoomView::of).toList();
-        return Response.ok(views).build();
+        java.util.LinkedHashMap<String, RoomView> byId = new java.util.LinkedHashMap<>();
+        // Owned rooms first (most recent first).
+        for (Room r : rooms.findByOwnerSubOrderByCreatedAtDesc(ownerSub)) {
+            byId.put(r.getId(), RoomView.of(r, true, null));
+        }
+        // Then rooms the caller co-manages (matched by their allowlist email), with the owner's name.
+        String email = speakers.findByOidcSub(ownerSub).map(Speaker::getEmail).orElse(null);
+        if (email != null) {
+            for (RoomManager rm : managers.findBySpeakerEmail(email)) {
+                if (byId.containsKey(rm.getRoomId())) {
+                    continue;
+                }
+                rooms.findById(rm.getRoomId())
+                        .ifPresent(r -> byId.put(r.getId(), RoomView.of(r, false, ownerName(r))));
+            }
+        }
+        return Response.ok(java.util.List.copyOf(byId.values())).build();
+    }
+
+    /** Display name (or email) of a room's owner, for showing on co-managed rooms. */
+    private String ownerName(Room r) {
+        return speakers.findByOidcSub(r.getOwnerSub())
+                .map(s -> s.getDisplayName() != null && !s.getDisplayName().isBlank()
+                        ? s.getDisplayName() : s.getEmail())
+                .orElse(null);
     }
 
     @GET
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response detail(@PathParam("id") String id) {
-        String ownerSub = requireProvisionedSpeaker();
-        return rooms.findById(id)
-                .map(room -> ownerSub.equals(room.getOwnerSub())
-                        ? Response.ok(RoomView.of(room)).build()
-                        : Response.status(Response.Status.FORBIDDEN).build())
-                .orElseGet(() -> Response.status(Response.Status.NOT_FOUND).build());
+        String sub = requireProvisionedSpeaker();
+        Room room = manageableRoomOrAbort(id, sub); // owner or co-manager
+        return Response.ok(RoomView.of(room, sub.equals(room.getOwnerSub()), ownerName(room))).build();
     }
 
     @POST
@@ -219,8 +248,93 @@ public class RoomResource {
             }
         }
         attachmentStore.deleteByRoom(id);
+        for (RoomManager rm : managers.findByRoomId(id)) {
+            managers.deleteById(rm.getId());
+        }
         rooms.deleteById(id);
         return Response.noContent().build();
+    }
+
+    // --- Co-speakers (§17.3): the owner (primary admin) invites/excludes co-managers. ---
+
+    /** Lists a room's co-speakers (owner or a co-speaker may read). */
+    @GET
+    @Path("/{id}/managers")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listManagers(@PathParam("id") String id) {
+        manageableRoomOrAbort(id, requireProvisionedSpeaker());
+        List<ManagerView> views = managers.findByRoomId(id).stream()
+                .map(rm -> new ManagerView(rm.getSpeakerEmail(), displayNameOf(rm.getSpeakerEmail())))
+                .toList();
+        return Response.ok(views).build();
+    }
+
+    /**
+     * Invites a provisioned speaker (by email) to co-manage the room — owner only. {@code 400} if the
+     * email is missing or not on the speaker allowlist; idempotent if already a co-speaker.
+     */
+    @POST
+    @Path("/{id}/managers")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response addManager(@PathParam("id") String id, ManagerRequest request) {
+        String sub = requireProvisionedSpeaker();
+        Room room = ownerRoomOrAbort(id, sub);
+        if (request == null || request.email() == null || request.email().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String email = request.email().trim().toLowerCase();
+        Speaker speaker = speakers.findByEmail(email).orElse(null);
+        if (speaker == null) {
+            return Response.status(Response.Status.BAD_REQUEST).build(); // not a provisioned speaker
+        }
+        if (email.equalsIgnoreCase(displayEmailOfOwner(room))) {
+            return Response.status(Response.Status.CONFLICT).build(); // the owner is already admin
+        }
+        if (managers.findByRoomIdAndSpeakerEmail(id, email).isEmpty()) {
+            managers.save(new RoomManager(UUID.randomUUID().toString(), id, email,
+                    speaker.getOidcSub(), Instant.now()));
+        }
+        return Response.status(Response.Status.CREATED)
+                .entity(new ManagerView(email, displayNameOf(email))).build();
+    }
+
+    /** Excludes a co-speaker (by email) — owner only. {@code 204} whether or not they were a co-speaker. */
+    @DELETE
+    @Path("/{id}/managers/{email}")
+    public Response removeManager(@PathParam("id") String id, @PathParam("email") String email) {
+        ownerRoomOrAbort(id, requireProvisionedSpeaker());
+        for (RoomManager rm : managers.findByRoomIdAndSpeakerEmail(id, email.trim().toLowerCase())) {
+            managers.deleteById(rm.getId());
+        }
+        return Response.noContent().build();
+    }
+
+    /** Co-speaker view: their email + display name (if known). */
+    public record ManagerView(String email, String displayName) {}
+
+    /** Invite body: the email of the speaker to add as a co-manager. */
+    public record ManagerRequest(String email) {}
+
+    /** The room if owned by {@code sub}; aborts {@code 404}/{@code 403} — for owner-only operations. */
+    private Room ownerRoomOrAbort(String id, String sub) {
+        Room room = rooms.findById(id)
+                .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        if (!sub.equals(room.getOwnerSub())) {
+            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        }
+        return room;
+    }
+
+    private String displayNameOf(String email) {
+        return speakers.findByEmail(email)
+                .map(s -> s.getDisplayName() != null && !s.getDisplayName().isBlank()
+                        ? s.getDisplayName() : s.getEmail())
+                .orElse(email);
+    }
+
+    private String displayEmailOfOwner(Room room) {
+        return speakers.findByOidcSub(room.getOwnerSub()).map(Speaker::getEmail).orElse(null);
     }
 
     /**
@@ -352,7 +466,7 @@ public class RoomResource {
             return rooms.findById(id)
                     .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
         }
-        return ownedRoomOrAbort(id, requireProvisionedSpeaker());
+        return manageableRoomOrAbort(id, requireProvisionedSpeaker());
     }
 
     private static Duration attachmentRetention() {
@@ -396,7 +510,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response createPin(@PathParam("id") String id, CreatePinRequest request) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         if (request == null || request.type() == null
                 || request.content() == null || request.content().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).build();
@@ -424,7 +538,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listPins(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         List<PinView> views = pinRepo.findByRoomIdOrderByOrderIndexAsc(id)
                 .stream().map(PinView::of).toList();
         return Response.ok(views).build();
@@ -441,7 +555,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response reorderPins(@PathParam("id") String id, ReorderRequest request) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         if (request == null || request.ids() == null || request.ids().isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
@@ -489,7 +603,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateLayout(@PathParam("id") String id, LayoutSpec layout) {
         String ownerSub = requireProvisionedSpeaker();
-        Room room = ownedRoomOrAbort(id, ownerSub);
+        Room room = manageableRoomOrAbort(id, ownerSub);
         if (room.getMode() != RoomMode.LAB && room.getMode() != RoomMode.HYBRID) {
             return Response.status(Response.Status.CONFLICT).build();
         }
@@ -511,7 +625,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listHelp(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         List<HelpView> views = helpRepo.findByRoomIdOrderByCreatedAtAsc(id)
                 .stream().map(HelpView::of).toList();
         return Response.ok(views).build();
@@ -538,7 +652,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response resolveHelp(@PathParam("id") String id, @PathParam("helpId") String helpId) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         HelpRequest h = helpRepo.findById(helpId)
                 .filter(r -> id.equals(r.getRoomId()))
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
@@ -557,7 +671,7 @@ public class RoomResource {
     private Response transitionHelp(String id, String helpId, HelpStatus from, HelpStatus to,
                                     boolean recordHandler) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         HelpRequest h = helpRepo.findById(helpId)
                 .filter(r -> id.equals(r.getRoomId()))
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
@@ -604,7 +718,7 @@ public class RoomResource {
 
     private Response moderate(String id, ModerationRequest request, Action action) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         if (request == null || request.pseudo() == null || request.pseudo().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
@@ -634,7 +748,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response observerToken(@PathParam("id") String id, @QueryParam("name") String name) {
         String ownerSub = requireProvisionedSpeaker();
-        Room room = ownedRoomOrAbort(id, ownerSub);
+        Room room = manageableRoomOrAbort(id, ownerSub);
         // The display name the speaker's chat appears under (default "speaker"); capped, never blank.
         String pseudo = (name == null || name.isBlank()) ? RoomSocket.OBSERVER_PSEUDO : name.trim();
         if (pseudo.length() > 40) {
@@ -658,7 +772,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response revealEnable(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        Room room = ownedRoomOrAbort(id, ownerSub);
+        Room room = manageableRoomOrAbort(id, ownerSub);
         if (room.getRevealSecret() == null || room.getRevealSecret().isBlank()) {
             room.setRevealSecret(UUID.randomUUID().toString());
             room = rooms.save(room);
@@ -673,7 +787,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response revealCmd(@PathParam("id") String id, RevealCmd request) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         if (request == null || request.cmd() == null || !REVEAL_CMDS.contains(request.cmd())) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
@@ -694,7 +808,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response chatHistory(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         List<ChatView> views = messages.findByRoomIdOrderByAtAsc(id).stream()
                 .map(m -> new ChatView(m.getAuthorPseudo(), m.getBody(), m.isPersistent(), m.isValidated(),
                         m.getAt() == null ? null : m.getAt().toString()))
@@ -707,7 +821,7 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response stats(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        ownedRoomOrAbort(id, ownerSub);
+        manageableRoomOrAbort(id, ownerSub);
         List<ChatMessage> msgs = messages.findByRoomIdOrderByAtAsc(id);
         List<HelpRequest> helps = helpRepo.findByRoomIdOrderByCreatedAtAsc(id);
         int persistent = (int) msgs.stream().filter(ChatMessage::isPersistent).count();
@@ -721,7 +835,7 @@ public class RoomResource {
     @Produces("text/markdown")
     public Response exportChat(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        Room room = ownedRoomOrAbort(id, ownerSub);
+        Room room = manageableRoomOrAbort(id, ownerSub);
         String md = Exports.chatMarkdown(room.getTitle(), room.getPin(), messages.findByRoomIdOrderByAtAsc(id));
         return Response.ok(md)
                 .header("Content-Disposition", "attachment; filename=\"chat-" + room.getPin() + ".md\"")
@@ -733,7 +847,7 @@ public class RoomResource {
     @Produces("text/csv")
     public Response exportHelp(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
-        Room room = ownedRoomOrAbort(id, ownerSub);
+        Room room = manageableRoomOrAbort(id, ownerSub);
         String csv = Exports.helpCsv(helpRepo.findByRoomIdOrderByCreatedAtAsc(id));
         return Response.ok(csv)
                 .header("Content-Disposition", "attachment; filename=\"help-" + room.getPin() + ".csv\"")
@@ -746,14 +860,25 @@ public class RoomResource {
     /** Past-event counters. */
     public record RoomStats(int messages, int persistentMessages, int helpTotal, int helpResolved, int attendees) {}
 
-    /** The room with {@code id} if owned by {@code ownerSub}; aborts {@code 404}/{@code 403} otherwise. */
-    Room ownedRoomOrAbort(String id, String ownerSub) {
+    /**
+     * The room with {@code id} if the caller ({@code sub}) may MANAGE it — i.e. is the owner OR an
+     * invited co-speaker (§17.3); aborts {@code 404}/{@code 403} otherwise. End/delete/invite use the
+     * stricter owner-only checks instead.
+     */
+    Room manageableRoomOrAbort(String id, String sub) {
         Room room = rooms.findById(id)
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
-        if (!ownerSub.equals(room.getOwnerSub())) {
-            throw new WebApplicationException(Response.Status.FORBIDDEN);
+        if (sub.equals(room.getOwnerSub()) || isCoManager(id, sub)) {
+            return room;
         }
-        return room;
+        throw new WebApplicationException(Response.Status.FORBIDDEN);
+    }
+
+    /** Whether {@code sub} is an invited co-speaker of the room (matched by the speaker's allowlist email). */
+    private boolean isCoManager(String roomId, String sub) {
+        return speakers.findByOidcSub(sub)
+                .map(s -> !managers.findByRoomIdAndSpeakerEmail(roomId, s.getEmail()).isEmpty())
+                .orElse(false);
     }
 
     @GET
