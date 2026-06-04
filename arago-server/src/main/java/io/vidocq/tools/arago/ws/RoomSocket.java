@@ -168,6 +168,24 @@ public class RoomSocket implements WebSocketHandler {
         }
         peers.computeIfAbsent(room.getId(), k -> ConcurrentHashMap.newKeySet()).add(ws);
 
+        // Presence (§17.6): tell the newcomer who is already here, then announce the newcomer to all.
+        String role = ws.attribute("speaker") != null ? "speaker" : "attendee";
+        Set<String> seen = new java.util.HashSet<>();
+        for (WebSocket peer : peers.get(room.getId())) {
+            if (peer == ws) {
+                continue;
+            }
+            String p = (String) peer.attribute("pseudo");
+            if (p == null) {
+                continue; // reveal deck has no identity
+            }
+            String r = peer.attribute("speaker") != null ? "speaker" : "attendee";
+            if (seen.add(r + '\0' + p)) {
+                trySend(ws, presenceEvent("join", p, r));
+            }
+        }
+        broadcast(room.getId(), presenceEvent("join", pseudo, role));
+
         // Replay the room history (oldest first) to the freshly joined client.
         for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(room.getId())) {
             trySend(ws, render(m));
@@ -455,6 +473,9 @@ public class RoomSocket implements WebSocketHandler {
             }
         }
         broadcast(roomId, renameEvent(oldPseudo, newPseudo));
+        // Keep the presence lists in sync with the new handle (§17.6).
+        broadcast(roomId, presenceEvent("leave", oldPseudo, "attendee"));
+        broadcast(roomId, presenceEvent("join", newPseudo, "attendee"));
     }
 
     /** Renders a rename event ({@code {"type":"rename","old":…,"new":…}}); clients relabel everywhere. */
@@ -463,6 +484,16 @@ public class RoomSocket implements WebSocketHandler {
                 .add("type", "rename")
                 .add("old", oldPseudo)
                 .add("new", newPseudo)
+                .build().toString();
+    }
+
+    /** Renders a presence event ({@code {"type":"presence","action":join|leave,"pseudo":…,"role":…}}). */
+    static String presenceEvent(String action, String pseudo, String role) {
+        return Json.createObjectBuilder()
+                .add("type", "presence")
+                .add("action", action)
+                .add("pseudo", pseudo)
+                .add("role", role)
                 .build().toString();
     }
 
@@ -510,6 +541,13 @@ public class RoomSocket implements WebSocketHandler {
             String pseudo = (String) ws.attribute("pseudo");
             if (pseudo != null) {
                 releaseSeat(roomId, pseudo);
+                // Presence leave (§17.6) — only once the pseudo has no remaining socket (multi-tab safe).
+                boolean stillHere = set != null && set.stream()
+                        .anyMatch(p -> pseudo.equals(p.attribute("pseudo")));
+                if (!stillHere) {
+                    String role = ws.attribute("speaker") != null ? "speaker" : "attendee";
+                    broadcast(roomId, presenceEvent("leave", pseudo, role));
+                }
             }
         }
     }

@@ -61,7 +61,8 @@ public class OidcResource {
         String sub = jwt.getSubject();
         return allowlist.authorize(email, sub)
                 .map(s -> Response.ok(
-                        new MeView(s.getEmail(), s.getRole().name(), s.getOidcSub(), s.getPseudo())).build())
+                        new MeView(s.getEmail(), s.getRole().name(), s.getOidcSub(), s.getPseudo(),
+                                s.getDisplayName())).build())
                 .orElseGet(() -> Response.status(Response.Status.FORBIDDEN)
                         .entity(new ErrorView("speaker_not_provisioned")).build());
     }
@@ -99,7 +100,8 @@ public class OidcResource {
         Speaker s = found.get();
         s.setPseudo(uniquePseudo(base));
         speakers.save(s);
-        return Response.ok(new MeView(s.getEmail(), s.getRole().name(), s.getOidcSub(), s.getPseudo())).build();
+        return Response.ok(new MeView(s.getEmail(), s.getRole().name(), s.getOidcSub(), s.getPseudo(),
+                s.getDisplayName())).build();
     }
 
     /** {@code base#nnn} with a 3-digit suffix unique across speakers (retries, then falls back to a UUID tag). */

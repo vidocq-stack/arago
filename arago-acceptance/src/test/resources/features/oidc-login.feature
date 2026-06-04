@@ -14,7 +14,7 @@ Feature: Speaker OIDC login (front-channel, Authorization Code + PKCE)
     When I open the SPA at "/"
     And I click "speaker-login"
     And I log in to Keycloak as "judy" with password "pw"
-    Then I see "judy@oidc.test"
+    Then I see "Judy Speaker"
 
   Scenario: A non-provisioned user is told they are not provisioned
     When I open the SPA at "/"

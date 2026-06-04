@@ -285,9 +285,9 @@ public class RoomResource {
         if (request == null || request.pseudo() == null || request.pseudo().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
-        Speaker speaker = speakers.findByPseudo(request.pseudo().trim()).orElse(null);
+        Speaker speaker = resolveSpeakerHandle(request.pseudo()).orElse(null);
         if (speaker == null) {
-            return Response.status(Response.Status.BAD_REQUEST).build(); // no speaker with that pseudo
+            return Response.status(Response.Status.BAD_REQUEST).build(); // no speaker with that handle
         }
         String email = speaker.getEmail();
         if (email.equalsIgnoreCase(displayEmailOfOwner(room))) {
@@ -330,6 +330,31 @@ public class RoomResource {
 
     private String displayEmailOfOwner(Room room) {
         return speakers.findByOidcSub(room.getOwnerSub()).map(Speaker::getEmail).orElse(null);
+    }
+
+    /**
+     * Resolves a co-speaker invite handle (§17.3) by pseudo, then exact email, then the account name —
+     * the email's local part or the display name (case-insensitive). So "speakera", "speakera@oidc.test"
+     * or their pseudo all work.
+     */
+    private java.util.Optional<Speaker> resolveSpeakerHandle(String input) {
+        String t = input.trim();
+        java.util.Optional<Speaker> byPseudo = speakers.findByPseudo(t);
+        if (byPseudo.isPresent()) {
+            return byPseudo;
+        }
+        java.util.Optional<Speaker> byEmail = speakers.findByEmail(t.toLowerCase());
+        if (byEmail.isPresent()) {
+            return byEmail;
+        }
+        try (var all = speakers.findAll()) {
+            return all.filter(s -> {
+                String email = s.getEmail() == null ? "" : s.getEmail();
+                String local = email.contains("@") ? email.substring(0, email.indexOf('@')) : email;
+                return local.equalsIgnoreCase(t)
+                        || (s.getDisplayName() != null && s.getDisplayName().equalsIgnoreCase(t));
+            }).findFirst();
+        }
     }
 
     /**

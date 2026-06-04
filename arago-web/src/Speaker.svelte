@@ -34,7 +34,8 @@
   let helps = $state([]);            // active help requests
   let pins = $state([]);
   let muted = $state({});            // pseudo -> true
-  let people = $state({});           // pseudo -> true (seen via seats/chat)
+  let attendeesPresent = $state({}); // pseudo -> true (live attendees, via presence §17.6)
+  let speakersPresent = $state({});  // pseudo -> true (live speakers in the room, via presence)
   let toast = $state('');
   let newPinType = $state('TEXT');
   let newPinContent = $state('');
@@ -48,6 +49,7 @@
   let chatBox = $state(null);        // chat scroll container ref
   let managersList = $state([]);     // co-speakers of the open room (owner view)
   let pendingDelete = $state(null);  // room awaiting delete confirmation (custom dialog)
+  let seatMenu = $state(null);       // right-click seat context menu {x,y,r,b,s,who,blocked}
   let invitePseudo = $state('');     // pseudo to invite as a co-speaker (§17.3)
   // Speaker pseudo: server-side identity (chat author name + co-speaker invite key). Editable.
   let pseudoInput = $state('');
@@ -66,6 +68,12 @@
   /** The pseudo to expose on the room WebSocket (their chat author), or a neutral fallback. */
   function speakerPseudo() {
     return (me && me.pseudo) ? me.pseudo : 'Speaker';
+  }
+
+  /** What to show as "Connecté : …" — pseudo, else display name, else the account name (email local part). */
+  function displayName() {
+    if (!me) return '';
+    return me.pseudo || me.name || (me.email ? me.email.split('@')[0] : '');
   }
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
@@ -169,7 +177,7 @@
     closeRoom();
     room = r;
     layout = r.layout || null;
-    seats = {}; helps = []; pins = []; muted = {}; people = {};
+    seats = {}; helps = []; pins = []; muted = {}; attendeesPresent = {}; speakersPresent = {};
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
     managersList = []; invitePseudo = '';
     const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerPseudo())}`,
@@ -204,8 +212,21 @@
       case 'help': onHelp(m); break;
       case 'pin': onPin(m); break;
       case 'chat': onChat(m); break;
+      case 'presence': onPresence(m); break;
       case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
       default: break;
+    }
+  }
+
+  function onPresence(m) {
+    const map = m.role === 'speaker' ? 'speakersPresent' : 'attendeesPresent';
+    const current = m.role === 'speaker' ? speakersPresent : attendeesPresent;
+    if (m.action === 'join') {
+      const next = { ...current, [m.pseudo]: true };
+      if (map === 'speakersPresent') speakersPresent = next; else attendeesPresent = next;
+    } else if (m.action === 'leave') {
+      const next = { ...current }; delete next[m.pseudo];
+      if (map === 'speakersPresent') speakersPresent = next; else attendeesPresent = next;
     }
   }
 
@@ -213,7 +234,6 @@
     const key = seatKey(m.row, m.block, m.seat);
     if (m.action === 'taken') {
       seats = { ...seats, [key]: m.attendee };
-      if (m.attendee) people = { ...people, [m.attendee]: true };
     } else if (m.action === 'free') {
       const next = { ...seats }; delete next[key]; seats = next;
     }
@@ -224,7 +244,6 @@
     const active = m.status === 'PENDING' || m.status === 'CLAIMED';
     const others = helps.filter((h) => h.id !== m.id);
     helps = active ? [...others, m] : others;
-    if (m.attendee) people = { ...people, [m.attendee]: true };
     // A brand-new pending request (not part of the initial replay) — chime for the speaker.
     if (m.status === 'PENDING' && !known) beep(880, 220);
   }
@@ -238,7 +257,6 @@
 
   // ---------- chat ----------
   function onChat(m) {
-    if (m.author) people = { ...people, [m.author]: true };
     chatLog = [...chatLog, {
       id: m.id || `${Date.now()}-${chatLog.length}`,
       author: m.author || '?',
@@ -331,15 +349,21 @@
     return !!layout?.blockedSeats?.some((x) => x.row === r && x.block === b && x.seat === s);
   }
 
-  // Right-click a seat (§17.4): occupied -> force-release the occupant; otherwise toggle availability.
+  // Right-click a seat (§17.5): open a small context menu (Libérer / Indispo) near the cursor.
   function onSeatAction(e, r, b, s) {
     e.preventDefault(); // suppress the browser context menu
-    const occupant = seats[seatKey(r, b, s)];
-    if (occupant) {
-      forceRelease(r, b, s, occupant);
-    } else {
-      toggleBlocked(r, b, s);
-    }
+    seatMenu = { x: e.clientX, y: e.clientY, r, b, s,
+      who: seats[seatKey(r, b, s)] || null, blocked: isBlocked(r, b, s) };
+  }
+
+  function menuRelease() {
+    if (seatMenu) forceRelease(seatMenu.r, seatMenu.b, seatMenu.s, seatMenu.who);
+    seatMenu = null;
+  }
+
+  function menuToggleBlocked() {
+    if (seatMenu) toggleBlocked(seatMenu.r, seatMenu.b, seatMenu.s);
+    seatMenu = null;
   }
 
   async function forceRelease(r, b, s, who) {
@@ -420,7 +444,7 @@
     });
     if (action === 'mute') muted = { ...muted, [pseudo]: true };
     if (action === 'unmute') { const n = { ...muted }; delete n[pseudo]; muted = n; }
-    if (action === 'kick') { const n = { ...people }; delete n[pseudo]; people = n; }
+    if (action === 'kick') { const n = { ...attendeesPresent }; delete n[pseudo]; attendeesPresent = n; }
   }
 
   // ---------- reveal remote control (§4.6) ----------
@@ -528,7 +552,13 @@
       {#if authError}<p class="error" data-testid="speaker-error">{authError}</p>{/if}
     </section>
   {:else}
-    <p class="speaker-id" data-testid="speaker-identity">Connecté : {me.email} ({me.role})</p>
+    <div class="speaker-id">
+      <span data-testid="speaker-identity">Connecté : {displayName()}</span>
+      <form class="speaker-name" onsubmit={savePseudo}>
+        <input data-testid="speaker-name" placeholder="choisir un pseudo" bind:value={pseudoInput} />
+        <button type="submit" class="ghost" data-testid="save-pseudo">Pseudo</button>
+      </form>
+    </div>
     {#if toast}<p class="ok" data-testid="speaker-toast">{toast}</p>{/if}
 
     {#if !room}
@@ -579,7 +609,7 @@
 
         {#if geom}
           <div class="maprow">
-            <span class="hint">Clic droit sur une place : libre ⇄ indisponible · place occupée → libérer.</span>
+            <span class="hint">Clic droit sur une place pour la gérer (libérer / indisponible).</span>
             <svg class="map" data-testid="speaker-map" viewBox={`0 0 ${geom.width} ${geom.height}`} width={geom.width} height={geom.height}>
               <defs>
                 <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -657,15 +687,7 @@
         </div>
 
         <div class="panel">
-          <div class="bar">
-            <h2>Chat</h2>
-            <form class="speaker-name" onsubmit={savePseudo}>
-              Mon pseudo
-              <input data-testid="speaker-name" placeholder="Speaker" bind:value={pseudoInput} />
-              <button type="submit" data-testid="save-pseudo">OK</button>
-              {#if me && me.pseudo}<span class="hint" data-testid="my-speaker-pseudo">{me.pseudo}</span>{/if}
-            </form>
-          </div>
+          <h2>Chat</h2>
           <ul class="chat-msgs" data-testid="speaker-chat" bind:this={chatBox}>
             {#each chatLog as m (m.id)}
               <li class="cmsg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
@@ -747,11 +769,22 @@
           </div>
         </div>
 
-        {#if Object.keys(people).length}
+        {#if Object.keys(speakersPresent).length}
           <div class="panel">
-            <h2>Participants</h2>
+            <h2>Speakers présents</h2>
             <ul class="people">
-              {#each Object.keys(people) as pseudo}
+              {#each Object.keys(speakersPresent) as sp}
+                <li data-testid="speaker-present">★ {sp}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        <div class="panel">
+          <h2>Participants</h2>
+          {#if Object.keys(attendeesPresent).length}
+            <ul class="people">
+              {#each Object.keys(attendeesPresent) as pseudo}
                 <li data-testid="person">
                   <span>{pseudo}{#if muted[pseudo]} (muet){/if}</span>
                   {#if muted[pseudo]}
@@ -763,8 +796,10 @@
                 </li>
               {/each}
             </ul>
-          </div>
-        {/if}
+          {:else}
+            <p class="hint" data-testid="no-attendees">Aucun participant pour l'instant.</p>
+          {/if}
+        </div>
       </section>
     {/if}
   {/if}
@@ -786,6 +821,18 @@
       </div>
     </div>
   {/if}
+
+  {#if seatMenu}
+    <button type="button" class="menu-overlay" aria-label="Fermer le menu" onclick={() => (seatMenu = null)}></button>
+    <div class="seat-menu" data-testid="seat-menu" style={`left:${seatMenu.x}px; top:${seatMenu.y}px`}>
+      {#if seatMenu.who}
+        <button type="button" data-testid="menu-release" onclick={menuRelease}>Libérer la place ({seatMenu.who})</button>
+      {/if}
+      <button type="button" data-testid="menu-block" onclick={menuToggleBlocked}>
+        {seatMenu.blocked ? 'Rendre disponible' : 'Rendre indisponible'}
+      </button>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -795,7 +842,8 @@
   .tagline { margin: 0.2rem 0 0; color: var(--arago-gold); font-style: italic; }
   h2 { font-size: 1.05rem; color: var(--arago-bordeaux); margin: 0.2rem 0 0.5rem; }
   .card { background: rgba(255,255,255,0.45); border: 1px solid var(--arago-gold); border-radius: 0.75rem; padding: 1.2rem; display: flex; flex-direction: column; gap: 0.6rem; }
-  .speaker-id { font-weight: 700; color: var(--arago-bordeaux); text-align: center; margin: 0; }
+  .speaker-id { font-weight: 700; color: var(--arago-bordeaux); margin: 0;
+    display: flex; gap: 1rem; align-items: center; justify-content: center; flex-wrap: wrap; }
   .ok { text-align: center; color: var(--arago-bordeaux); font-weight: 700; margin: 0; }
   input, select { font: inherit; padding: 0.5rem 0.6rem; border: 2px solid var(--arago-bordeaux); border-radius: 0.5rem; background: var(--arago-cream); color: var(--arago-ink); }
   label { display: flex; gap: 0.5rem; align-items: center; font-weight: 600; }
@@ -851,6 +899,17 @@
   .modal h3 { margin: 0 0 0.6rem; color: var(--arago-bordeaux); }
   .modal p { margin: 0 0 1.2rem; }
   .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+  .menu-overlay { position: fixed; inset: 0; z-index: 60; background: transparent; border: none; padding: 0; cursor: default; }
+  .seat-menu {
+    position: fixed; z-index: 61; background: var(--arago-cream); border: 1px solid var(--arago-gold);
+    border-radius: 0.5rem; box-shadow: 0 8px 24px rgba(26,20,16,0.3); padding: 0.3rem;
+    display: flex; flex-direction: column; min-width: 12rem;
+  }
+  .seat-menu button {
+    background: transparent; color: var(--arago-ink); border: none; text-align: left;
+    padding: 0.45rem 0.6rem; border-radius: 0.35rem; font-weight: 600; cursor: pointer;
+  }
+  .seat-menu button:hover { background: var(--arago-paper); }
   .hint { margin: 0; font-size: 0.85rem; color: rgba(26,20,16,0.7); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
   .map { max-width: 100%; height: auto; background: rgba(255,255,255,0.4); border: 1px solid var(--arago-gold); border-radius: 0.6rem; }

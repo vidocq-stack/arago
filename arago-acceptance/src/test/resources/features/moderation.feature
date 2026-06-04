@@ -23,6 +23,7 @@ Feature: Room moderation — mute / kick attendee (Phase 2)
       """
     Then the response status is 200
     And I remember "tokenA" from the JSON field "token"
+    And I remember "pseudoA" from the JSON field "pseudo"
     When I POST "/api/rooms/join" with body:
       """
       {"pin":"{pin}","pseudo":"Bob"}
@@ -34,7 +35,7 @@ Feature: Room moderation — mute / kick attendee (Phase 2)
     # Mute Alice → her message is not broadcast to Bob.
     When I POST "/api/rooms/{roomId}/moderation/mute" with body:
       """
-      {"pseudo":"Alice"}
+      {"pseudo":"{pseudoA}"}
       """
     Then the response status is 200
     When on WebSocket "A" I send the chat message "blocked while muted"
@@ -42,7 +43,7 @@ Feature: Room moderation — mute / kick attendee (Phase 2)
     # Unmute Alice → her message is broadcast again.
     When I POST "/api/rooms/{roomId}/moderation/unmute" with body:
       """
-      {"pseudo":"Alice"}
+      {"pseudo":"{pseudoA}"}
       """
     Then the response status is 200
     When on WebSocket "A" I send the chat message "allowed after unmute"
@@ -50,7 +51,7 @@ Feature: Room moderation — mute / kick attendee (Phase 2)
     # Kick Alice → her socket is closed.
     When I POST "/api/rooms/{roomId}/moderation/kick" with body:
       """
-      {"pseudo":"Alice"}
+      {"pseudo":"{pseudoA}"}
       """
     Then the response status is 200
     And WebSocket "A" is closed within 3 seconds

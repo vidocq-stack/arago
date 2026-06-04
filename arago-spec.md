@@ -865,9 +865,13 @@ Fonctionnalités ajoutées après les phases 0–6. Cette section fait foi pour 
 - Le propriétaire peut **inviter un autre speaker** à **co-gérer** une room, et l'**exclure**. Un
   co-speaker a les droits de gestion (pins, modération, layout, reveal, observer/chat speaker,
   historique/exports) mais **ni Terminer ni Supprimer ni gérer les invitations**.
-- **Identité speaker par pseudo** : chaque speaker se choisit un **pseudo** (`PUT /api/oidc/me/pseudo`),
-  ré-suffixé `#nnn` et **unique** ; il sert de nom d'auteur dans le chat speaker ET de **clé d'invitation**
-  (`POST /api/rooms/{id}/managers {pseudo}`), pas l'email. `GET /api/oidc/me` expose le pseudo.
+- **Identité speaker par pseudo** : chaque speaker se choisit un **pseudo** (`PUT /api/oidc/me/pseudo`,
+  réglable depuis l'en-tête de la console, même hors room), ré-suffixé `#nnn` et **unique** ; il sert de
+  nom d'auteur dans le chat speaker. `GET /api/oidc/me` expose pseudo + nom de compte. L'en-tête affiche
+  « Connecté : \<pseudo|nom de compte\> » (sans email ni rôle).
+- **Invitation d'un co-speaker par pseudo OU nom de compte** : `POST /api/rooms/{id}/managers {pseudo}`
+  résout l'entrée par **pseudo**, puis **email** exact, puis **nom de compte** (partie locale de l'email
+  ou display name), insensible à la casse. Ex. `speakera`, `speakera@oidc.test` ou son pseudo.
 - Modèle de données : table `room_managers (room_id, speaker_email, speaker_sub, …)` (clé interne =
   email, résolu depuis le pseudo) ; l'autorisation des endpoints de gestion accepte le propriétaire
   **ou** un co-speaker ; `end`/`delete`/invitations restent **owner-only**.
@@ -895,10 +899,18 @@ Fonctionnalités ajoutées après les phases 0–6. Cette section fait foi pour 
 
 - **Plan de salle speaker en temps réel** : la console (observer WebSocket) reflète les sièges
   pris/libérés/indisponibles en direct.
-- **Clic droit sur une place** (plus de case « Éditer le plan ») : place **libre ⇄ indisponible**
-  (toggle `blockedSeats` via `PUT …/layout`) ; place **occupée → libérer de force** l'occupant
-  (`POST /api/rooms/{id}/seats/release {row,block,seat}`, owner/co-speaker), le siège disparaît de
-  toutes les vues (broadcast `seat free`) et l'attendee est désassis.
+- **Clic droit sur une place** (plus de case « Éditer le plan ») : ouvre un **menu contextuel** près du
+  curseur — **Libérer la place** (si occupée) et **Rendre indisponible / disponible**. La libération
+  forcée (`POST /api/rooms/{id}/seats/release {row,block,seat}`, owner/co-speaker) fait disparaître le
+  siège de toutes les vues (broadcast `seat free`) et désassoit l'attendee ; l'indisponibilité bascule
+  `blockedSeats` via `PUT …/layout`.
+
+### 17.6 Présence : listes séparées attendees / speakers
+
+- Le WebSocket diffuse des évènements de **présence** (`{type:"presence",action:join|leave,pseudo,role}`)
+  à la connexion/déconnexion (snapshot envoyé au nouvel arrivant). La console maintient **deux listes
+  live distinctes** : **Participants** (attendees) et **Speakers présents** — le speaker n'apparaît plus
+  parmi les participants. Multi-onglets : le `leave` n'est émis qu'au dernier socket du pseudo.
 - **Exclure un participant libère son/ses siège(s)** : le kick relâche explicitement les sièges actifs
   (une fermeture WebSocket initiée par le serveur ne déclenche pas `onClose` de façon fiable).
 - **Refresh attendee** : la session attendee est persistée en `sessionStorage` (par onglet) et
