@@ -378,6 +378,13 @@
                 {#if p.pinType === 'URL'}
                   {#if p.previewImage}<img class="pin-img" src={p.previewImage} alt="" />{/if}
                   <a href={p.content} target="_blank" rel="noopener noreferrer">{p.previewTitle || p.content}</a>
+                {:else if p.pinType === 'IMAGE'}
+                  <a href={`/api/attachments/${p.content}`} target="_blank" rel="noopener noreferrer">
+                    <img class="pin-img" src={`/api/attachments/${p.content}`} alt="" />
+                  </a>
+                {:else if p.pinType === 'FILE'}
+                  <a class="chat-file" href={`/api/attachments/${p.content}`}
+                     target="_blank" rel="noopener noreferrer">📎 {t('chat.file')}</a>
                 {:else if p.pinType === 'CODE'}
                   <pre class="pin-code"><code>{p.content}</code></pre>
                 {:else}

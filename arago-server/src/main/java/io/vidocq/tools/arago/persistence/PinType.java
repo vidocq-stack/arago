@@ -15,5 +15,9 @@ public enum PinType {
     TEXT,
     URL,
     CODE,
-    SECRET
+    SECRET,
+    /** An image attachment: {@code content} is the attachment id, rendered inline for attendees. */
+    IMAGE,
+    /** A file attachment: {@code content} is the attachment id, offered as a download. */
+    FILE
 }

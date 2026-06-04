@@ -32,6 +32,7 @@
   let toast = $state('');
   let newPinType = $state('TEXT');
   let newPinContent = $state('');
+  let newPinFile = $state(null);     // selected file for an IMAGE/FILE pin
   let dragFrom = $state(null);
   let revealInfo = $state(null);     // { secret, pin } after enabling reveal
   let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
@@ -187,7 +188,8 @@
 
   function onPin(m) {
     if (m.action === 'reorder') return; // we drive reorder locally
-    if (m.action === 'add' && m.pin) pins = [...pins.filter((p) => p.id !== m.pin.id), m.pin];
+    // WS frames carry the kind as `pinType`; REST (loadPins) as `type`. Normalise to `type`.
+    if (m.action === 'add' && m.pin) pins = [...pins.filter((p) => p.id !== m.pin.id), { ...m.pin, type: m.pin.pinType }];
     else if (m.action === 'remove' && m.pin) pins = pins.filter((p) => p.id !== m.pin.id);
   }
 
@@ -309,12 +311,24 @@
 
   async function addPin(e) {
     e?.preventDefault();
-    if (!newPinContent.trim()) return;
+    let content;
+    if (newPinType === 'IMAGE' || newPinType === 'FILE') {
+      if (!newPinFile) return;
+      const kind = newPinType === 'IMAGE' ? 'image' : 'file';
+      const up = await fetch(
+        `/api/rooms/${room.id}/attachments?kind=${kind}&filename=${encodeURIComponent(newPinFile.name)}`,
+        { method: 'POST', headers: { ...authHeaders(), 'Content-Type': newPinFile.type || 'application/octet-stream' }, body: newPinFile });
+      if (!up.ok) { roomError = 'Envoi du fichier impossible.'; return; }
+      content = (await up.json()).id; // pin the attachment id
+    } else {
+      if (!newPinContent.trim()) return;
+      content = newPinContent.trim();
+    }
     const res = await fetch(`/api/rooms/${room.id}/pins`, {
       method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: newPinType, content: newPinContent.trim() }),
+      body: JSON.stringify({ type: newPinType, content }),
     });
-    if (res.ok) { newPinContent = ''; await loadPins(); }
+    if (res.ok) { newPinContent = ''; newPinFile = null; await loadPins(); }
   }
 
   async function deletePin(id) {
@@ -520,15 +534,28 @@
           <form class="pin-add" onsubmit={addPin}>
             <select data-testid="pin-type" bind:value={newPinType}>
               <option>TEXT</option><option>URL</option><option>CODE</option><option>SECRET</option>
+              <option>IMAGE</option><option>FILE</option>
             </select>
-            <input data-testid="pin-content" placeholder="Contenu" bind:value={newPinContent} />
+            {#if newPinType === 'IMAGE' || newPinType === 'FILE'}
+              <input type="file" data-testid="pin-file"
+                     accept={newPinType === 'IMAGE' ? 'image/*' : undefined}
+                     onchange={(e) => (newPinFile = e.target.files?.[0] || null)} />
+            {:else}
+              <input data-testid="pin-content" placeholder="Contenu" bind:value={newPinContent} />
+            {/if}
             <button type="submit" data-testid="add-pin">Pin</button>
           </form>
           <ul class="pins">
             {#each pins as p, i (p.id)}
               <li data-testid="pin-item" draggable="true"
                   ondragstart={() => onDragStart(i)} ondragover={(e) => e.preventDefault()} ondrop={() => onDrop(i)}>
-                <span>[{p.type}] {p.previewTitle || p.content}</span>
+                {#if p.type === 'IMAGE'}
+                  <img class="pin-thumb" src={`/api/attachments/${p.content}`} alt="" />
+                {:else if p.type === 'FILE'}
+                  <a href={`/api/attachments/${p.content}`} target="_blank" rel="noopener noreferrer">📎 fichier</a>
+                {:else}
+                  <span>[{p.type}] {p.previewTitle || p.content}</span>
+                {/if}
                 <button type="button" class="ghost" data-testid="delete-pin" onclick={() => deletePin(p.id)}>×</button>
               </li>
             {/each}
@@ -675,6 +702,7 @@
   .cmsg .chat-file { color: inherit; text-decoration: underline; word-break: break-word; }
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
+  .pin-thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; }
   .edit-toggle { font-size: 0.85rem; }
   .hint { margin: 0; font-size: 0.85rem; color: rgba(26,20,16,0.7); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
