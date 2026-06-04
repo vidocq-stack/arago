@@ -67,6 +67,7 @@
 
   // --- room state ---
   let token = $state(null);
+  let roomId = $state(null);
   let roomMode = $state(null);
   let myPseudo = $state('');
   let ws = $state(null);
@@ -102,6 +103,7 @@
       }
       const data = await res.json();
       token = data.token;
+      roomId = data.roomId;
       roomMode = data.mode;
       myPseudo = pseudo.trim();
       seats = {}; mySeat = null; myHelp = null; chat = []; pins = [];
@@ -153,6 +155,9 @@
       body: m.body || '',
       fromSpeaker: !!m.fromSpeaker,
       mine: !m.fromSpeaker && m.author === myPseudo,
+      attachmentId: m.attachmentId || null,
+      attachmentKind: m.attachmentKind || null,
+      attachmentName: m.attachmentName || null,
     }].slice(-200); // keep the tail bounded for a long-running room
   }
 
@@ -162,6 +167,29 @@
     if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ body }));
     chatInput = '';
+  }
+
+  // Upload the picked file as a room attachment, then send a chat message referencing it (with any
+  // text already typed). Images render inline; other files become a download link.
+  async function pickChatFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !roomId || !token) return;
+    const kind = file.type.startsWith('image/') ? 'image' : 'file';
+    try {
+      const res = await fetch(
+        `/api/rooms/${roomId}/attachments?token=${encodeURIComponent(token)}`
+          + `&kind=${kind}&filename=${encodeURIComponent(file.name)}`,
+        { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      if (!res.ok) { notice = 'chat.upload-failed'; return; }
+      const a = await res.json();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          body: chatInput.trim(), attachmentId: a.id, attachmentKind: a.kind, attachmentName: a.filename,
+        }));
+        chatInput = '';
+      }
+    } catch { notice = 'chat.upload-failed'; }
   }
 
   // Auto-scroll the chat to the newest message whenever the list grows.
@@ -422,12 +450,25 @@
             {#each chat as m (m.id)}
               <li class="msg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
                 <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
-                <span class="text">{m.body}</span>
+                {#if m.body}<span class="text">{m.body}</span>{/if}
+                {#if m.attachmentId}
+                  {#if m.attachmentKind === 'image'}
+                    <a href={`/api/attachments/${m.attachmentId}`} target="_blank" rel="noopener noreferrer">
+                      <img class="chat-img" src={`/api/attachments/${m.attachmentId}`} alt={m.attachmentName || ''} />
+                    </a>
+                  {:else}
+                    <a class="chat-file" href={`/api/attachments/${m.attachmentId}`}
+                       target="_blank" rel="noopener noreferrer">📎 {m.attachmentName || t('chat.file')}</a>
+                  {/if}
+                {/if}
               </li>
             {/each}
             {#if !chat.length}<li class="empty hint">{t('chat.empty')}</li>{/if}
           </ul>
           <form class="chat-form" onsubmit={sendChat}>
+            <label class="attach-btn" title={t('chat.attach')} aria-label={t('chat.attach')}>📎
+              <input type="file" data-testid="chat-file" onchange={pickChatFile} hidden />
+            </label>
             <input data-testid="chat-input" autocomplete="off" maxlength="500"
                    placeholder={t('chat.placeholder')} bind:value={chatInput} />
             <button type="submit" data-testid="chat-send" disabled={!chatInput.trim()}>{t('chat.send')}</button>
@@ -568,8 +609,14 @@
   .msg .who { font-size: 0.7rem; font-weight: 700; opacity: 0.85; }
   .msg .text { white-space: pre-wrap; word-break: break-word; }
   .empty { background: none; color: var(--arago-muted); align-self: center; }
-  .chat-form { display: flex; gap: 0.5rem; }
-  .chat-form input { flex: 1; min-width: 0; }
+  .chat-form { display: flex; gap: 0.5rem; align-items: center; }
+  .chat-form input[type='text'], .chat-form > input:not([type]) { flex: 1; min-width: 0; }
+  .attach-btn {
+    flex-shrink: 0; cursor: pointer; font-size: 1.2rem; line-height: 1;
+    padding: 0.35rem 0.5rem; border: 1px solid var(--arago-bordeaux); border-radius: 0.5rem;
+  }
+  .chat-img { max-width: 12rem; max-height: 12rem; border-radius: 0.4rem; display: block; margin-top: 0.2rem; }
+  .chat-file { color: inherit; text-decoration: underline; word-break: break-word; }
 
   /* Pinned content surfaced by the speaker (§4.4). */
   .pins { width: 100%; }

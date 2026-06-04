@@ -221,9 +221,12 @@ public class RoomSocket implements WebSocketHandler {
             return;
         }
         String profileId = (String) ws.attribute("profileId");
-        String body = json.getString("body", null);
-        if (body == null || body.isBlank()) {
-            return;
+        String body = json.getString("body", "");
+        String attachmentId = emptyToNull(json.getString("attachmentId", null));
+        String attachmentKind = emptyToNull(json.getString("attachmentKind", null));
+        String attachmentName = emptyToNull(json.getString("attachmentName", null));
+        if (body.isBlank() && attachmentId == null) {
+            return; // nothing to send (no text, no attachment)
         }
         if (body.length() > MAX_BODY) {
             body = body.substring(0, MAX_BODY);
@@ -245,9 +248,16 @@ public class RoomSocket implements WebSocketHandler {
         }
 
         boolean fromSpeaker = ws.attribute("speaker") != null;
-        ChatMessage saved = messages.save(new ChatMessage(UUID.randomUUID().toString(), roomId, profileId,
-                pseudo, fromSpeaker, persistent, body, now, purgeAfter, validated));
-        broadcast(roomId, render(saved));
+        ChatMessage msg = new ChatMessage(UUID.randomUUID().toString(), roomId, profileId,
+                pseudo, fromSpeaker, persistent, body, now, purgeAfter, validated);
+        msg.setAttachmentId(attachmentId);
+        msg.setAttachmentKind(attachmentKind);
+        msg.setAttachmentName(attachmentName);
+        broadcast(roomId, render(messages.save(msg)));
+    }
+
+    private static String emptyToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     /** Sends the validation magic link only on the attendee's first persistent message (anti-spam). */
@@ -696,15 +706,22 @@ public class RoomSocket implements WebSocketHandler {
     }
 
     private static String render(ChatMessage m) {
-        return Json.createObjectBuilder()
+        var b = Json.createObjectBuilder()
                 .add("type", "chat")
                 .add("id", m.getId())
                 .add("author", m.getAuthorPseudo())
                 .add("fromSpeaker", m.isFromSpeaker())
                 .add("persistent", m.isPersistent())
                 .add("body", m.getBody())
-                .add("at", m.getAt().toString())
-                .build().toString();
+                .add("at", m.getAt().toString());
+        if (m.getAttachmentId() != null) {
+            b.add("attachmentId", m.getAttachmentId());
+            b.add("attachmentKind", m.getAttachmentKind() == null ? "file" : m.getAttachmentKind());
+            if (m.getAttachmentName() != null) {
+                b.add("attachmentName", m.getAttachmentName());
+            }
+        }
+        return b.build().toString();
     }
 
     private static Duration ephemeralRetention() {

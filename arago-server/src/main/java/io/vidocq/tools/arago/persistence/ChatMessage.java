@@ -57,6 +57,16 @@ public class ChatMessage {
     @Column(nullable = false)
     private boolean validated;
 
+    /** Optional attachment (§4.3): its id (served at {@code /api/attachments/{id}}), kind and filename. */
+    @Column(name = "attachment_id")
+    private String attachmentId;
+
+    @Column(name = "attachment_kind")
+    private String attachmentKind;
+
+    @Column(name = "attachment_name")
+    private String attachmentName;
+
     public ChatMessage() {}
 
     public ChatMessage(String id, String roomId, String profileId, String authorPseudo,
@@ -94,4 +104,10 @@ public class ChatMessage {
     public void    setPurgeAfter(Instant after)  { this.purgeAfter = after; }
     public boolean isValidated()                 { return validated;    }
     public void    setValidated(boolean v)       { this.validated = v;  }
+    public String  getAttachmentId()             { return attachmentId;   }
+    public void    setAttachmentId(String id)    { this.attachmentId = id; }
+    public String  getAttachmentKind()           { return attachmentKind; }
+    public void    setAttachmentKind(String k)   { this.attachmentKind = k; }
+    public String  getAttachmentName()           { return attachmentName; }
+    public void    setAttachmentName(String n)   { this.attachmentName = n; }
 }

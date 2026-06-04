@@ -1,5 +1,6 @@
 package io.vidocq.tools.arago.profile;
 
+import io.vidocq.tools.arago.attachments.AttachmentStore;
 import io.vidocq.tools.arago.persistence.ChatMessage;
 import io.vidocq.tools.arago.persistence.ChatMessageRepository;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,12 +24,17 @@ public class PurgeService {
     @Inject
     ChatMessageRepository messages;
 
-    /** Deletes due ephemeral messages and returns the counts. */
+    @Inject
+    AttachmentStore attachments;
+
+    /** Deletes due ephemeral messages (and expired attachments) and returns the counts. */
     public PurgeResult run() {
-        List<ChatMessage> due = messages.findByPersistentFalseAndPurgeAfterLessThan(Instant.now());
+        Instant now = Instant.now();
+        List<ChatMessage> due = messages.findByPersistentFalseAndPurgeAfterLessThan(now);
         for (ChatMessage m : due) {
             messages.deleteById(m.getId());
         }
+        attachments.deleteExpired(now); // RGPD: drop blobs past their retention (§4.7)
         return new PurgeResult(due.size());
     }
 

@@ -51,6 +51,9 @@ const DICT = {
     'chat.empty': 'Aucun message pour l’instant.',
     'chat.placeholder': 'Votre message…',
     'chat.send': 'Envoyer',
+    'chat.attach': 'Joindre un fichier',
+    'chat.file': 'fichier',
+    'chat.upload-failed': 'Échec de l’envoi du fichier.',
     'pins.title': 'Épinglé',
   },
   en: {
@@ -100,6 +103,9 @@ const DICT = {
     'chat.empty': 'No messages yet.',
     'chat.placeholder': 'Your message…',
     'chat.send': 'Send',
+    'chat.attach': 'Attach a file',
+    'chat.file': 'file',
+    'chat.upload-failed': 'File upload failed.',
     'pins.title': 'Pinned',
   },
 };

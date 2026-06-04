@@ -200,6 +200,9 @@
       body: m.body || '',
       fromSpeaker: !!m.fromSpeaker,
       mine: !!m.fromSpeaker, // this console is the speaker; its own messages are flagged fromSpeaker
+      attachmentId: m.attachmentId || null,
+      attachmentKind: m.attachmentKind || null,
+      attachmentName: m.attachmentName || null,
     }].slice(-200);
   }
 
@@ -209,6 +212,27 @@
     if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ body }));
     chatInput = '';
+  }
+
+  // Upload a file as a room attachment (speaker authorizes with the Bearer), then post it to the chat.
+  async function pickChatFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !room) return;
+    const kind = file.type.startsWith('image/') ? 'image' : 'file';
+    try {
+      const res = await fetch(
+        `/api/rooms/${room.id}/attachments?kind=${kind}&filename=${encodeURIComponent(file.name)}`,
+        { method: 'POST', headers: { ...authHeaders(), 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      if (!res.ok) { roomError = 'Envoi du fichier impossible.'; return; }
+      const a = await res.json();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          body: chatInput.trim(), attachmentId: a.id, attachmentKind: a.kind, attachmentName: a.filename,
+        }));
+        chatInput = '';
+      }
+    } catch { roomError = 'Envoi du fichier impossible.'; }
   }
 
   $effect(() => {
@@ -523,12 +547,25 @@
             {#each chatLog as m (m.id)}
               <li class="cmsg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
                 <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
-                <span class="text">{m.body}</span>
+                {#if m.body}<span class="text">{m.body}</span>{/if}
+                {#if m.attachmentId}
+                  {#if m.attachmentKind === 'image'}
+                    <a href={`/api/attachments/${m.attachmentId}`} target="_blank" rel="noopener noreferrer">
+                      <img class="chat-img" src={`/api/attachments/${m.attachmentId}`} alt={m.attachmentName || ''} />
+                    </a>
+                  {:else}
+                    <a class="chat-file" href={`/api/attachments/${m.attachmentId}`}
+                       target="_blank" rel="noopener noreferrer">📎 {m.attachmentName || 'fichier'}</a>
+                  {/if}
+                {/if}
               </li>
             {/each}
             {#if !chatLog.length}<li class="hint empty">Aucun message pour l'instant.</li>{/if}
           </ul>
           <form class="chat-form" onsubmit={sendChat}>
+            <label class="attach-btn" title="Joindre un fichier" aria-label="Joindre un fichier">📎
+              <input type="file" data-testid="speaker-chat-file" onchange={pickChatFile} hidden />
+            </label>
             <input data-testid="speaker-chat-input" autocomplete="off" maxlength="500"
                    placeholder="Message au public…" bind:value={chatInput} />
             <button type="submit" data-testid="speaker-chat-send" disabled={!chatInput.trim()}>Envoyer</button>
@@ -626,8 +663,16 @@
   .cmsg .who { font-size: 0.68rem; font-weight: 700; opacity: 0.85; }
   .cmsg .text { white-space: pre-wrap; word-break: break-word; }
   .chat-msgs .empty { background: none; align-self: center; }
-  .chat-form { display: flex; gap: 0.5rem; }
-  .chat-form input { flex: 1; min-width: 0; }
+  .chat-form { display: flex; gap: 0.5rem; align-items: center; }
+  .chat-form > input { flex: 1; min-width: 0; }
+  .speaker-name { font-size: 0.8rem; display: flex; gap: 0.3rem; align-items: center; }
+  .speaker-name input { width: 8rem; }
+  .attach-btn {
+    flex-shrink: 0; cursor: pointer; font-size: 1.15rem; line-height: 1;
+    padding: 0.3rem 0.45rem; border: 1px solid var(--arago-bordeaux); border-radius: 0.45rem;
+  }
+  .cmsg .chat-img { max-width: 10rem; max-height: 10rem; border-radius: 0.35rem; display: block; margin-top: 0.2rem; }
+  .cmsg .chat-file { color: inherit; text-decoration: underline; word-break: break-word; }
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .edit-toggle { font-size: 0.85rem; }

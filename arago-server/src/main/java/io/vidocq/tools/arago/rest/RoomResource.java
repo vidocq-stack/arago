@@ -1,5 +1,7 @@
 package io.vidocq.tools.arago.rest;
 
+import io.vidocq.tools.arago.attachments.AttachmentStore;
+import io.vidocq.tools.arago.auth.AragoJwt;
 import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
 import io.vidocq.tools.arago.persistence.AttendeeProfile;
 import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
@@ -32,6 +34,7 @@ import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PUT;
@@ -45,7 +48,12 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+import org.eclipse.microprofile.config.ConfigProvider;
+
+import java.io.IOException;
+import java.io.InputStream;
 import java.security.Principal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -103,6 +111,12 @@ public class RoomResource {
 
     @Inject
     io.vidocq.tools.arago.persistence.ChatMessageRepository messages;
+
+    @Inject
+    AttachmentStore attachmentStore;
+
+    /** Max upload size (5 MiB) — images/QR/small files; the rest is rejected with 413. */
+    private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -225,6 +239,85 @@ public class RoomResource {
 
     /** Public lobby view for the projected attendee screen: room title + PIN + live headcount. */
     public record LobbyView(String title, String pin, String mode, String status, int attendees) {}
+
+    /**
+     * Uploads a chat/pin attachment (cf. arago-spec §4.3/§4.4) stored as a PostgreSQL blob. Authorized as
+     * a room participant: an attendee/observer token for this room ({@code ?token=}) or the owning
+     * speaker's Bearer. Body = raw bytes; {@code kind} = {@code image} (served inline, no SVG) or
+     * {@code file}. Capped at {@value #MAX_ATTACHMENT_BYTES} bytes (413 beyond). Returns the attachment id
+     * the client then references from a chat message or a pin.
+     */
+    @POST
+    @Path("/{id}/attachments")
+    @Consumes(MediaType.WILDCARD)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response uploadAttachment(@PathParam("id") String id,
+            @QueryParam("token") String attendeeToken,
+            @QueryParam("kind") String kind,
+            @QueryParam("filename") String filename,
+            @HeaderParam("Content-Type") String contentType,
+            InputStream body) {
+        Room room = authorizeRoomParticipant(id, attendeeToken);
+        if (contentType == null || contentType.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String ct = contentType.split(";")[0].trim().toLowerCase();
+        String k = "image".equalsIgnoreCase(kind) ? "image" : "file";
+        if (k.equals("image") && (!ct.startsWith("image/") || ct.equals("image/svg+xml"))) {
+            return Response.status(Response.Status.BAD_REQUEST).build(); // SVG blocked (XSS); raster images only
+        }
+        byte[] data;
+        try {
+            data = body.readNBytes(MAX_ATTACHMENT_BYTES + 1);
+        } catch (IOException e) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        if (data.length == 0) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        if (data.length > MAX_ATTACHMENT_BYTES) {
+            return Response.status(413).build();
+        }
+        String aid = UUID.randomUUID().toString();
+        String safeName = filename == null ? null : filename.replaceAll("[\\r\\n\"\\\\]", "").trim();
+        if (safeName != null && safeName.length() > 200) {
+            safeName = safeName.substring(0, 200);
+        }
+        Instant now = Instant.now();
+        attachmentStore.save(aid, room.getId(), k, ct, safeName, data, now, now.plus(attachmentRetention()));
+        return Response.status(Response.Status.CREATED)
+                .entity(new AttachmentView(aid, k, ct, safeName, data.length)).build();
+    }
+
+    /** Result of an upload: the id to reference from a chat message or pin. */
+    public record AttachmentView(String id, String kind, String contentType, String filename, int size) {}
+
+    /**
+     * Resolves a room participant: a valid attendee/observer token for this room ({@code token}), else the
+     * owning provisioned speaker. Aborts {@code 401}/{@code 403}/{@code 404} otherwise.
+     */
+    private Room authorizeRoomParticipant(String id, String attendeeToken) {
+        if (attendeeToken != null && !attendeeToken.isBlank()) {
+            AragoJwt.Claims claims;
+            try {
+                claims = attendeeTokens.verify(attendeeToken);
+            } catch (RuntimeException e) {
+                throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+            }
+            if (!id.equals(claims.extra().get("roomId"))) {
+                throw new WebApplicationException(Response.Status.FORBIDDEN);
+            }
+            return rooms.findById(id)
+                    .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
+        }
+        return ownedRoomOrAbort(id, requireProvisionedSpeaker());
+    }
+
+    private static Duration attachmentRetention() {
+        int hours = ConfigProvider.getConfig()
+                .getOptionalValue("arago.room.ttl-hours", Integer.class).orElse(12);
+        return Duration.ofHours(hours + 1L);
+    }
 
     /** A BLOCKS layout is valid when it has at least one row and one non-empty, positively-sized block. */
     private static boolean isValidLayout(LayoutSpec layout) {
