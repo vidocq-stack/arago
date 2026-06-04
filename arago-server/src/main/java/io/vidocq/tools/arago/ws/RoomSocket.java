@@ -396,6 +396,22 @@ public class RoomSocket implements WebSocketHandler {
         broadcast(roomId, seatEvent("taken", saved));
     }
 
+    /**
+     * Speaker force-releases the seat at the given coordinates (§17.4): releases the active seat there and
+     * broadcasts {@code free} so it disappears from every view. Returns whether a seat was freed.
+     */
+    public boolean releaseSeatAt(String roomId, int row, int block, int seat) {
+        for (Seat s : seatRepo.findByRoomIdAndReleased(roomId, false)) {
+            if (s.getSeatRow() == row && s.getSeatBlockIndex() == block && s.getSeatInBlock() == seat) {
+                s.setReleased(true);
+                s.setReleasedAt(Instant.now());
+                broadcast(roomId, seatEvent("free", seatRepo.save(s)));
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Attendee gives up their seat (§4.5); also called when they leave the room (see {@link #onClose}). */
     private void releaseSeat(String roomId, String pseudo) {
         for (Seat freed : releaseActiveSeats(roomId, pseudo, null)) {

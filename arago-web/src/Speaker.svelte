@@ -35,7 +35,6 @@
   let pins = $state([]);
   let muted = $state({});            // pseudo -> true
   let people = $state({});           // pseudo -> true (seen via seats/chat)
-  let editing = $state(false);       // layout editor mode
   let toast = $state('');
   let newPinType = $state('TEXT');
   let newPinContent = $state('');
@@ -48,6 +47,7 @@
   let chatInput = $state('');
   let chatBox = $state(null);        // chat scroll container ref
   let managersList = $state([]);     // co-speakers of the open room (owner view)
+  let pendingDelete = $state(null);  // room awaiting delete confirmation (custom dialog)
   let invitePseudo = $state('');     // pseudo to invite as a co-speaker (§17.3)
   // Speaker pseudo: server-side identity (chat author name + co-speaker invite key). Editable.
   let pseudoInput = $state('');
@@ -147,9 +147,14 @@
     await loadRooms();
   }
 
-  async function deleteRoom(r) {
-    // eslint-disable-next-line no-alert
-    if (!confirm(`Supprimer définitivement la room « ${r.title} » ? Tout son contenu sera effacé.`)) return;
+  function deleteRoom(r) {
+    pendingDelete = r; // open the confirmation dialog
+  }
+
+  async function confirmDelete() {
+    const r = pendingDelete;
+    pendingDelete = null;
+    if (!r) return;
     const res = await fetch(`/api/rooms/${r.id}`, { method: 'DELETE', headers: authHeaders() });
     if (res.ok) {
       if (room && room.id === r.id) closeRoom();
@@ -164,7 +169,7 @@
     closeRoom();
     room = r;
     layout = r.layout || null;
-    seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
+    seats = {}; helps = []; pins = []; muted = {}; people = {};
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
     managersList = []; invitePseudo = '';
     const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerPseudo())}`,
@@ -326,17 +331,36 @@
     return !!layout?.blockedSeats?.some((x) => x.row === r && x.block === b && x.seat === s);
   }
 
-  async function toggleSeat(r, b, s) {
-    if (!editing || !layout) return;
+  // Right-click a seat (§17.4): occupied -> force-release the occupant; otherwise toggle availability.
+  function onSeatAction(e, r, b, s) {
+    e.preventDefault(); // suppress the browser context menu
+    const occupant = seats[seatKey(r, b, s)];
+    if (occupant) {
+      forceRelease(r, b, s, occupant);
+    } else {
+      toggleBlocked(r, b, s);
+    }
+  }
+
+  async function forceRelease(r, b, s, who) {
+    const res = await fetch(`/api/rooms/${room.id}/seats/release`, {
+      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ row: r, block: b, seat: s }),
+    });
+    // The seat "free" arrives over the WebSocket and updates the map live.
+    if (res.ok) toast = `Place libérée (${who}).`;
+  }
+
+  async function toggleBlocked(r, b, s) {
+    if (!layout) return;
     const blocked = layout.blockedSeats || [];
     const exists = blocked.some((x) => x.row === r && x.block === b && x.seat === s);
     const next = exists
       ? blocked.filter((x) => !(x.row === r && x.block === b && x.seat === s))
       : [...blocked, { row: r, block: b, seat: s }];
-    const updated = { ...layout, blockedSeats: next };
     const res = await fetch(`/api/rooms/${room.id}/layout`, {
       method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
+      body: JSON.stringify({ ...layout, blockedSeats: next }),
     });
     if (res.ok) layout = (await res.json()).layout;
   }
@@ -555,8 +579,7 @@
 
         {#if geom}
           <div class="maprow">
-            <label class="edit-toggle"><input type="checkbox" data-testid="edit-layout" bind:checked={editing} /> Éditer le plan</label>
-            {#if editing}<span class="hint">Cliquez une place pour la rendre indisponible (ou la rétablir).</span>{/if}
+            <span class="hint">Clic droit sur une place : libre ⇄ indisponible · place occupée → libérer.</span>
             <svg class="map" data-testid="speaker-map" viewBox={`0 0 ${geom.width} ${geom.height}`} width={geom.width} height={geom.height}>
               <defs>
                 <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -571,8 +594,9 @@
                 {@const who = seats[seatKey(c.r, c.b, c.s)]}
                 <rect class={`seat ${cls}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={cls}
                       x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
-                      role="button" tabindex="0" onclick={() => toggleSeat(c.r, c.b, c.s)}>
-                  {#if who}<title>{who}</title>{/if}
+                      role="button" tabindex="0"
+                      oncontextmenu={(e) => onSeatAction(e, c.r, c.b, c.s)}>
+                  {#if who}<title>{who ? who + ' — clic droit pour libérer' : ''}</title>{/if}
                 </rect>
               {/each}
             </svg>
@@ -746,6 +770,22 @@
   {/if}
 
   <footer><a href="/privacy.html">Confidentialité</a></footer>
+
+  {#if pendingDelete}
+    <div class="modal-overlay" role="dialog" aria-modal="true" data-testid="delete-dialog">
+      <div class="modal">
+        <h3>Supprimer la room ?</h3>
+        <p>« {pendingDelete.title} » et tout son contenu (chat, pins, demandes d'aide, sièges,
+          fichiers) seront <strong>définitivement</strong> effacés.</p>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-testid="delete-cancel"
+                  onclick={() => (pendingDelete = null)}>Annuler</button>
+          <button type="button" class="danger" data-testid="delete-confirm"
+                  onclick={confirmDelete}>Supprimer définitivement</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -799,7 +839,18 @@
   button.ghost.danger { background: transparent; color: var(--arago-danger); border-color: var(--arago-danger); }
   .pin-qr { flex-shrink: 0; background: #fff; padding: 0.25rem; border-radius: 0.3rem; }
   .pin-qr :global(svg) { display: block; }
-  .edit-toggle { font-size: 0.85rem; }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(26,20,16,0.55);
+    display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem;
+  }
+  .modal {
+    background: var(--arago-cream); color: var(--arago-ink); border: 1px solid var(--arago-gold);
+    border-radius: 0.75rem; padding: 1.5rem; max-width: 28rem; width: 100%;
+    box-shadow: 0 12px 40px rgba(26,20,16,0.35);
+  }
+  .modal h3 { margin: 0 0 0.6rem; color: var(--arago-bordeaux); }
+  .modal p { margin: 0 0 1.2rem; }
+  .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
   .hint { margin: 0; font-size: 0.85rem; color: rgba(26,20,16,0.7); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
   .map { max-width: 100%; height: auto; background: rgba(255,255,255,0.4); border: 1px solid var(--arago-gold); border-radius: 0.6rem; }

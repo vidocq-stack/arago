@@ -890,3 +890,18 @@ Fonctionnalités ajoutées après les phases 0–6. Cette section fait foi pour 
 - **Notifications sonores** : bip à un nouvel appel d'aide (speaker) et à la prise en charge (attendee).
 - **Stack dev locale** `docker-compose.localdev.yml` : Arago + PostgreSQL + Keycloak (realm pré-importé,
   speakers de démo seedés), split issuer front/back-channel pour OIDC.
+
+### 17.5 Gestion des sièges par le speaker (clic droit) & confirmations
+
+- **Plan de salle speaker en temps réel** : la console (observer WebSocket) reflète les sièges
+  pris/libérés/indisponibles en direct.
+- **Clic droit sur une place** (plus de case « Éditer le plan ») : place **libre ⇄ indisponible**
+  (toggle `blockedSeats` via `PUT …/layout`) ; place **occupée → libérer de force** l'occupant
+  (`POST /api/rooms/{id}/seats/release {row,block,seat}`, owner/co-speaker), le siège disparaît de
+  toutes les vues (broadcast `seat free`) et l'attendee est désassis.
+- **Exclure un participant libère son/ses siège(s)** : le kick relâche explicitement les sièges actifs
+  (une fermeture WebSocket initiée par le serveur ne déclenche pas `onClose` de façon fiable).
+- **Refresh attendee** : la session attendee est persistée en `sessionStorage` (par onglet) et
+  restaurée au montage (reconnexion WS + re-réservation du siège s'il est libre) ; un refresh ne fait
+  plus quitter la room. Une vraie déconnexion (kick / room close) ramène à l'écran join.
+- **Confirmation de suppression** : dialogue applicatif (overlay) au lieu du `confirm()` natif.

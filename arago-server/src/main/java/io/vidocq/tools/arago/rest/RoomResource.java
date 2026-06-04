@@ -612,6 +612,30 @@ public class RoomResource {
     }
 
     /**
+     * Speaker force-releases an occupied seat (§17.4): the seat is freed and the change broadcast so it
+     * disappears from every view. Owner or co-manager. {@code freed} reports whether a seat was actually
+     * occupied there.
+     */
+    @POST
+    @Path("/{id}/seats/release")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response releaseSeat(@PathParam("id") String id, SeatRef request) {
+        manageableRoomOrAbort(id, requireProvisionedSpeaker());
+        if (request == null) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        boolean freed = roomSocket.releaseSeatAt(id, request.row(), request.block(), request.seat());
+        return Response.ok(new SeatReleaseResult(freed)).build();
+    }
+
+    /** A seat coordinate (row, block index, seat index in block). */
+    public record SeatRef(int row, int block, int seat) {}
+
+    /** Whether the force-release actually freed an occupied seat. */
+    public record SeatReleaseResult(boolean freed) {}
+
+    /**
      * Lists a room's help requests oldest-first (cf. arago-spec §4.5), owner only. Feeds the speaker
      * LAB panel; attendees raise/cancel theirs over the WebSocket ({@link RoomSocket}).
      */
