@@ -2,6 +2,13 @@
   import { onMount } from 'svelte';
   import Prefs from './lib/Prefs.svelte';
   import { t } from './lib/i18n.svelte.js';
+  import { generate as qrGenerate, toSvg as qrToSvg } from './lib/qrcode.js';
+
+  /** Scannable QR SVG for `text`, or null when it does not fit (too long). */
+  function qrSvg(text) {
+    const m = text ? qrGenerate(text) : null;
+    return m ? qrToSvg(m, { size: 180 }) : null;
+  }
   // Attendee SPA (arago-spec §4.2/§4.5): join a room by PIN + pseudo, then — in a LAB room — see the
   // top-down seating plan, tap a free seat to sit (first-come-first-serve, server-authoritative), and
   // raise a "need help" request. All real-time state flows over the room WebSocket (RoomSocket);
@@ -385,6 +392,9 @@
                 {:else if p.pinType === 'FILE'}
                   <a class="chat-file" href={`/api/attachments/${p.content}`}
                      target="_blank" rel="noopener noreferrer">📎 {t('chat.file')}</a>
+                {:else if p.pinType === 'QR'}
+                  {#if qrSvg(p.content)}<span class="pin-qr">{@html qrSvg(p.content)}</span>{/if}
+                  <a href={p.content} target="_blank" rel="noopener noreferrer">{p.content}</a>
                 {:else if p.pinType === 'CODE'}
                   <pre class="pin-code"><code>{p.content}</code></pre>
                 {:else}
@@ -640,6 +650,8 @@
     padding: 0.5rem; border-radius: 0.4rem; font-size: 0.85rem;
   }
   .pin-text { white-space: pre-wrap; word-break: break-word; }
+  .pin-qr { flex-shrink: 0; background: #fff; padding: 0.3rem; border-radius: 0.3rem; }
+  .pin-qr :global(svg) { display: block; }
 
   footer { margin-top: auto; text-align: center; font-size: 0.85rem; }
   footer a { color: var(--arago-bordeaux); }

@@ -19,5 +19,7 @@ public enum PinType {
     /** An image attachment: {@code content} is the attachment id, rendered inline for attendees. */
     IMAGE,
     /** A file attachment: {@code content} is the attachment id, offered as a download. */
-    FILE
+    FILE,
+    /** A QR code: {@code content} is the URL/text; attendees see a scannable QR generated client-side. */
+    QR
 }

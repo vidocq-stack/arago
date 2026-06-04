@@ -1,5 +1,12 @@
 <script>
   import { onMount } from 'svelte';
+  import { generate as qrGenerate, toSvg as qrToSvg } from './lib/qrcode.js';
+
+  /** Scannable QR SVG for `text`, or null when it does not fit (too long). */
+  function qrSvg(text) {
+    const m = text ? qrGenerate(text) : null;
+    return m ? qrToSvg(m, { size: 150 }) : null;
+  }
   import Prefs from './lib/Prefs.svelte';
   // Speaker console (arago-spec §9). OIDC login (return=/speaker), "my rooms" list + create, and per
   // room: a LIVE top-down view (observer token → room WebSocket), the help queue (claim/resolve), a
@@ -534,7 +541,7 @@
           <form class="pin-add" onsubmit={addPin}>
             <select data-testid="pin-type" bind:value={newPinType}>
               <option>TEXT</option><option>URL</option><option>CODE</option><option>SECRET</option>
-              <option>IMAGE</option><option>FILE</option>
+              <option>IMAGE</option><option>FILE</option><option>QR</option>
             </select>
             {#if newPinType === 'IMAGE' || newPinType === 'FILE'}
               <input type="file" data-testid="pin-file"
@@ -553,6 +560,9 @@
                   <img class="pin-thumb" src={`/api/attachments/${p.content}`} alt="" />
                 {:else if p.type === 'FILE'}
                   <a href={`/api/attachments/${p.content}`} target="_blank" rel="noopener noreferrer">📎 fichier</a>
+                {:else if p.type === 'QR'}
+                  {#if qrSvg(p.content)}<span class="pin-qr">{@html qrSvg(p.content)}</span>{/if}
+                  <a href={p.content} target="_blank" rel="noopener noreferrer">{p.content}</a>
                 {:else}
                   <span>[{p.type}] {p.previewTitle || p.content}</span>
                 {/if}
@@ -703,6 +713,8 @@
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .pin-thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; }
+  .pin-qr { flex-shrink: 0; background: #fff; padding: 0.25rem; border-radius: 0.3rem; }
+  .pin-qr :global(svg) { display: block; }
   .edit-toggle { font-size: 0.85rem; }
   .hint { margin: 0; font-size: 0.85rem; color: rgba(26,20,16,0.7); }
   .error { margin: 0; color: var(--arago-danger); font-weight: 600; }
