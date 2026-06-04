@@ -48,16 +48,24 @@
   let chatInput = $state('');
   let chatBox = $state(null);        // chat scroll container ref
   let managersList = $state([]);     // co-speakers of the open room (owner view)
-  let inviteEmail = $state('');
-  // Display name the speaker's chat appears under (persisted; applied when a room is opened).
-  let speakerName = $state(readSpeakerName());
+  let invitePseudo = $state('');     // pseudo to invite as a co-speaker (§17.3)
+  // Speaker pseudo: server-side identity (chat author name + co-speaker invite key). Editable.
+  let pseudoInput = $state('');
 
-  function readSpeakerName() {
-    try { return localStorage.getItem('arago.speaker.name') || 'Speaker'; } catch { return 'Speaker'; }
+  async function savePseudo(e) {
+    e?.preventDefault();
+    const base = pseudoInput.trim();
+    if (!base) return;
+    const res = await fetch('/api/oidc/me/pseudo', {
+      method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pseudo: base }),
+    });
+    if (res.ok) { me = await res.json(); pseudoInput = me.pseudo || ''; }
   }
-  function saveSpeakerName(v) {
-    speakerName = v;
-    try { localStorage.setItem('arago.speaker.name', v); } catch { /* ignore */ }
+
+  /** The pseudo to expose on the room WebSocket (their chat author), or a neutral fallback. */
+  function speakerPseudo() {
+    return (me && me.pseudo) ? me.pseudo : 'Speaker';
   }
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
@@ -73,6 +81,12 @@
   function openDisplay(r) {
     window.open(`/display?pin=${encodeURIComponent(r.pin)}`, '_blank', 'noopener');
   }
+
+  // Auto-refresh "Mes rooms" so an invitation to co-manage appears without a manual reload (§17.3).
+  onMount(() => {
+    const id = setInterval(() => { if (token && !room) loadRooms(); }, 8000);
+    return () => clearInterval(id);
+  });
 
   onMount(async () => {
     const params = new URLSearchParams(window.location.search);
@@ -94,6 +108,7 @@
       const meRes = await fetch('/api/oidc/me', { headers: authHeaders() });
       if (!meRes.ok) { authError = 'Connexion impossible.'; return; }
       me = await meRes.json();
+      pseudoInput = me.pseudo || '';
       await loadRooms();
     } catch { authError = 'Connexion impossible.'; }
   });
@@ -151,8 +166,8 @@
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
-    managersList = []; inviteEmail = '';
-    const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerName)}`,
+    managersList = []; invitePseudo = '';
+    const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerPseudo())}`,
       { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
@@ -405,14 +420,14 @@
 
   async function addManager(e) {
     e?.preventDefault();
-    const email = inviteEmail.trim();
-    if (!email) return;
+    const pseudo = invitePseudo.trim();
+    if (!pseudo) return;
     const res = await fetch(`/api/rooms/${room.id}/managers`, {
       method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ pseudo }),
     });
-    if (res.ok) { inviteEmail = ''; await loadManagers(); }
-    else roomError = 'Invitation impossible (speaker non provisionné ?).';
+    if (res.ok) { invitePseudo = ''; await loadManagers(); }
+    else roomError = 'Invitation impossible (pseudo introuvable ?).';
   }
 
   async function removeManager(email) {
@@ -541,6 +556,7 @@
         {#if geom}
           <div class="maprow">
             <label class="edit-toggle"><input type="checkbox" data-testid="edit-layout" bind:checked={editing} /> Éditer le plan</label>
+            {#if editing}<span class="hint">Cliquez une place pour la rendre indisponible (ou la rétablir).</span>{/if}
             <svg class="map" data-testid="speaker-map" viewBox={`0 0 ${geom.width} ${geom.height}`} width={geom.width} height={geom.height}>
               <defs>
                 <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -619,10 +635,12 @@
         <div class="panel">
           <div class="bar">
             <h2>Chat</h2>
-            <label class="speaker-name">Mon pseudo
-              <input data-testid="speaker-name" value={speakerName}
-                     onchange={(e) => saveSpeakerName(e.target.value.trim() || 'Speaker')} />
-            </label>
+            <form class="speaker-name" onsubmit={savePseudo}>
+              Mon pseudo
+              <input data-testid="speaker-name" placeholder="Speaker" bind:value={pseudoInput} />
+              <button type="submit" data-testid="save-pseudo">OK</button>
+              {#if me && me.pseudo}<span class="hint" data-testid="my-speaker-pseudo">{me.pseudo}</span>{/if}
+            </form>
           </div>
           <ul class="chat-msgs" data-testid="speaker-chat" bind:this={chatBox}>
             {#each chatLog as m (m.id)}
@@ -657,7 +675,7 @@
           <div class="panel">
             <h2>Co-speakers</h2>
             <form class="pin-add" onsubmit={addManager}>
-              <input data-testid="invite-email" type="email" placeholder="email@speaker" bind:value={inviteEmail} />
+              <input data-testid="invite-pseudo" placeholder="pseudo#nnn" bind:value={invitePseudo} />
               <button type="submit" data-testid="invite-manager">Inviter</button>
             </form>
             <ul class="people">
@@ -777,7 +795,8 @@
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .pin-thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; }
-  .ghost.danger { color: var(--arago-danger); border-color: var(--arago-danger); }
+  /* Ghost (outline) danger button: transparent bg so the red text stays readable (override button.danger). */
+  button.ghost.danger { background: transparent; color: var(--arago-danger); border-color: var(--arago-danger); }
   .pin-qr { flex-shrink: 0; background: #fff; padding: 0.25rem; border-radius: 0.3rem; }
   .pin-qr :global(svg) { display: block; }
   .edit-toggle { font-size: 0.85rem; }

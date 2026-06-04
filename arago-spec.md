@@ -862,11 +862,15 @@ Fonctionnalités ajoutées après les phases 0–6. Cette section fait foi pour 
 
 - Le **créateur** d'une room en est l'**admin principal** : seul lui peut **Terminer** et **Supprimer**
   la room, et **inviter/exclure** des co-speakers.
-- Le propriétaire peut **inviter un autre speaker** (provisionné dans l'allowlist) à **co-gérer** une
-  room, et l'**exclure**. Un co-speaker a les droits de gestion (pins, modération, layout, reveal,
-  observer/chat speaker, historique/exports) mais **ni Terminer ni Supprimer ni gérer les invitations**.
-- Modèle de données : table `room_managers (room_id, speaker_sub, …)` ; l'autorisation des endpoints de
-  gestion accepte le propriétaire **ou** un co-speaker ; `end`/`delete`/invitations restent **owner-only**.
+- Le propriétaire peut **inviter un autre speaker** à **co-gérer** une room, et l'**exclure**. Un
+  co-speaker a les droits de gestion (pins, modération, layout, reveal, observer/chat speaker,
+  historique/exports) mais **ni Terminer ni Supprimer ni gérer les invitations**.
+- **Identité speaker par pseudo** : chaque speaker se choisit un **pseudo** (`PUT /api/oidc/me/pseudo`),
+  ré-suffixé `#nnn` et **unique** ; il sert de nom d'auteur dans le chat speaker ET de **clé d'invitation**
+  (`POST /api/rooms/{id}/managers {pseudo}`), pas l'email. `GET /api/oidc/me` expose le pseudo.
+- Modèle de données : table `room_managers (room_id, speaker_email, speaker_sub, …)` (clé interne =
+  email, résolu depuis le pseudo) ; l'autorisation des endpoints de gestion accepte le propriétaire
+  **ou** un co-speaker ; `end`/`delete`/invitations restent **owner-only**.
 - `GET /api/rooms` liste les rooms **possédées ou co-gérées**. Pour une room **non possédée**, l'UI
   affiche le **nom du propriétaire** (le `RoomView` expose le display-name de l'owner).
 

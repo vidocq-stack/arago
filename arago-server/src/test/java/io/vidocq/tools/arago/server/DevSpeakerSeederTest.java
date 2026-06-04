@@ -100,6 +100,11 @@ class DevSpeakerSeederTest {
         }
 
         @Override
+        public Optional<Speaker> findByPseudo(String pseudo) {
+            return Optional.empty();
+        }
+
+        @Override
         public <S extends Speaker> S save(S entity) {
             byEmail.put(entity.getEmail(), entity);
             return entity;

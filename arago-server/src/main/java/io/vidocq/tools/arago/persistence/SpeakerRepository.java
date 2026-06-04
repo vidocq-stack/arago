@@ -22,5 +22,7 @@ public interface SpeakerRepository extends BasicRepository<Speaker, String> {
 
     Optional<Speaker> findByOidcSub(String oidcSub);
 
+    Optional<Speaker> findByPseudo(String pseudo);
+
     long count();
 }

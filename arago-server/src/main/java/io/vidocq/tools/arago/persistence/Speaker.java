@@ -43,6 +43,10 @@ public class Speaker {
     @Column(name = "display_name")
     private String displayName;
 
+    /** Self-chosen unique handle (suffixed {@code #nnn}); chat author name + co-speaker invite key (§17.3). */
+    @Column(unique = true)
+    private String pseudo;
+
     /** Who created the entry — traceability ("superadmin"). */
     @Column(name = "invited_by", nullable = false)
     private String invitedBy;
@@ -81,6 +85,8 @@ public class Speaker {
     public void    setEnabled(boolean enabled)      { this.enabled = enabled; }
     public String  getDisplayName()                 { return displayName;    }
     public void    setDisplayName(String name)      { this.displayName = name; }
+    public String  getPseudo()                      { return pseudo;         }
+    public void    setPseudo(String pseudo)         { this.pseudo = pseudo;  }
     public String  getInvitedBy()                   { return invitedBy;      }
     public void    setInvitedBy(String invitedBy)   { this.invitedBy = invitedBy; }
     public Instant getInvitedAt()                   { return invitedAt;      }

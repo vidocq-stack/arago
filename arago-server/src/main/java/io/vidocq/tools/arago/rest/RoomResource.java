@@ -264,7 +264,9 @@ public class RoomResource {
     public Response listManagers(@PathParam("id") String id) {
         manageableRoomOrAbort(id, requireProvisionedSpeaker());
         List<ManagerView> views = managers.findByRoomId(id).stream()
-                .map(rm -> new ManagerView(rm.getSpeakerEmail(), displayNameOf(rm.getSpeakerEmail())))
+                .map(rm -> new ManagerView(rm.getSpeakerEmail(),
+                        speakers.findByEmail(rm.getSpeakerEmail()).map(Speaker::getPseudo)
+                                .orElse(rm.getSpeakerEmail())))
                 .toList();
         return Response.ok(views).build();
     }
@@ -280,14 +282,14 @@ public class RoomResource {
     public Response addManager(@PathParam("id") String id, ManagerRequest request) {
         String sub = requireProvisionedSpeaker();
         Room room = ownerRoomOrAbort(id, sub);
-        if (request == null || request.email() == null || request.email().isBlank()) {
+        if (request == null || request.pseudo() == null || request.pseudo().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
-        String email = request.email().trim().toLowerCase();
-        Speaker speaker = speakers.findByEmail(email).orElse(null);
+        Speaker speaker = speakers.findByPseudo(request.pseudo().trim()).orElse(null);
         if (speaker == null) {
-            return Response.status(Response.Status.BAD_REQUEST).build(); // not a provisioned speaker
+            return Response.status(Response.Status.BAD_REQUEST).build(); // no speaker with that pseudo
         }
+        String email = speaker.getEmail();
         if (email.equalsIgnoreCase(displayEmailOfOwner(room))) {
             return Response.status(Response.Status.CONFLICT).build(); // the owner is already admin
         }
@@ -296,7 +298,7 @@ public class RoomResource {
                     speaker.getOidcSub(), Instant.now()));
         }
         return Response.status(Response.Status.CREATED)
-                .entity(new ManagerView(email, displayNameOf(email))).build();
+                .entity(new ManagerView(email, speaker.getPseudo())).build();
     }
 
     /** Excludes a co-speaker (by email) — owner only. {@code 204} whether or not they were a co-speaker. */
@@ -310,11 +312,11 @@ public class RoomResource {
         return Response.noContent().build();
     }
 
-    /** Co-speaker view: their email + display name (if known). */
-    public record ManagerView(String email, String displayName) {}
+    /** Co-speaker view: their pseudo (for display) + email (the identifier used to exclude). */
+    public record ManagerView(String email, String pseudo) {}
 
-    /** Invite body: the email of the speaker to add as a co-manager. */
-    public record ManagerRequest(String email) {}
+    /** Invite body: the pseudo (#nnn) of the speaker to add as a co-manager (§17.3). */
+    public record ManagerRequest(String pseudo) {}
 
     /** The room if owned by {@code sub}; aborts {@code 404}/{@code 403} — for owner-only operations. */
     private Room ownerRoomOrAbort(String id, String sub) {
@@ -324,13 +326,6 @@ public class RoomResource {
             throw new WebApplicationException(Response.Status.FORBIDDEN);
         }
         return room;
-    }
-
-    private String displayNameOf(String email) {
-        return speakers.findByEmail(email)
-                .map(s -> s.getDisplayName() != null && !s.getDisplayName().isBlank()
-                        ? s.getDisplayName() : s.getEmail())
-                .orElse(email);
     }
 
     private String displayEmailOfOwner(Room room) {
