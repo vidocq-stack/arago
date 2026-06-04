@@ -47,6 +47,10 @@ const DICT = {
     'display.attendees': 'personnes connectées',
     'display.ended': 'Session terminée',
     'display.notfound': 'Room introuvable',
+    'chat.title': 'Chat',
+    'chat.empty': 'Aucun message pour l’instant.',
+    'chat.placeholder': 'Votre message…',
+    'chat.send': 'Envoyer',
   },
   en: {
     'tagline': 'Speaker & Lab Companion',
@@ -91,6 +95,10 @@ const DICT = {
     'display.attendees': 'people connected',
     'display.ended': 'Session ended',
     'display.notfound': 'Room not found',
+    'chat.title': 'Chat',
+    'chat.empty': 'No messages yet.',
+    'chat.placeholder': 'Your message…',
+    'chat.send': 'Send',
   },
 };
 

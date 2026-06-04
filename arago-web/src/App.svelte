@@ -77,6 +77,11 @@
   let notice = $state('');            // transient message (e.g. seat taken)
   let revealFollow = $state(null);    // "H.V" current slide when the speaker drives a reveal deck (§4.6)
 
+  // --- chat (§4.3): all room peers exchange messages over the same WebSocket. ---
+  let chat = $state([]);              // [{id, author, body, fromSpeaker, mine}]
+  let chatInput = $state('');
+  let chatBox = $state(null);         // scroll container ref (auto-scroll to newest)
+
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
 
   async function join(e) {
@@ -119,9 +124,34 @@
       case 'seat': onSeat(m); break;
       case 'help': onHelp(m); break;
       case 'reveal.state': revealFollow = `${m.indexh}.${m.indexv}`; break;
-      // chat/pin frames are handled by other views; ignored here.
+      case 'chat': onChat(m); break;
+      // pin frames are not surfaced in the attendee view.
     }
   }
+
+  function onChat(m) {
+    chat = [...chat, {
+      id: m.id || `${Date.now()}-${chat.length}`,
+      author: m.author || '?',
+      body: m.body || '',
+      fromSpeaker: !!m.fromSpeaker,
+      mine: !m.fromSpeaker && m.author === myPseudo,
+    }].slice(-200); // keep the tail bounded for a long-running room
+  }
+
+  function sendChat(e) {
+    e?.preventDefault();
+    const body = chatInput.trim();
+    if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ body }));
+    chatInput = '';
+  }
+
+  // Auto-scroll the chat to the newest message whenever the list grows.
+  $effect(() => {
+    chat.length;
+    if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  });
 
   function onSeat(m) {
     const key = seatKey(m.row, m.block, m.seat);
@@ -272,49 +302,69 @@
       {#if notice}<p class="notice" data-testid="notice">{t(notice)}</p>{/if}
       {#if revealFollow}<p class="follow" data-testid="reveal-follow">{t('room.reveal-follow', { slide: revealFollow })}</p>{/if}
 
-      {#if geom}
-        <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
-             width={geom.width} height={geom.height} role="group" aria-label={t('room.map-aria')}>
-          <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
-          <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">{t('room.stage')}</text>
+      <div class="room-body" class:two-col={!!geom}>
+        {#if geom}
+          <div class="seat-col">
+            <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
+                 width={geom.width} height={geom.height} role="group" aria-label={t('room.map-aria')}>
+              <rect class="stage" x={PAD} y={PAD} width={geom.stageW} height={STAGE} rx="4" />
+              <text class="stage-txt" x={geom.width / 2} y={PAD + STAGE / 2 + 4} text-anchor="middle">{t('room.stage')}</text>
 
-          {#each geom.blockLabels as bl}
-            <text class="block-lbl" x={bl.x} y={PAD + STAGE + 8} text-anchor="middle">{bl.label}</text>
-          {/each}
-          {#each geom.rowYs as y, r}
-            <text class="row-lbl" x={PAD} y={y + SEAT / 2 + 4}>{rowLabel(r)}</text>
-          {/each}
+              {#each geom.blockLabels as bl}
+                <text class="block-lbl" x={bl.x} y={PAD + STAGE + 8} text-anchor="middle">{bl.label}</text>
+              {/each}
+              {#each geom.rowYs as y, r}
+                <text class="row-lbl" x={PAD} y={y + SEAT / 2 + 4}>{rowLabel(r)}</text>
+              {/each}
 
-          {#each geom.cells as c (c.r + '-' + c.b + '-' + c.s)}
-            {@const st = seatState(c.r, c.b, c.s)}
-            <rect class={`seat ${st}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={st}
-                  x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
-                  role="button" tabindex="0" aria-label={`R${c.r + 1} S${c.s + 1}`}
-                  onclick={() => claim(c.r, c.b, c.s)}
-                  onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && claim(c.r, c.b, c.s)} />
-          {/each}
-        </svg>
+              {#each geom.cells as c (c.r + '-' + c.b + '-' + c.s)}
+                {@const st = seatState(c.r, c.b, c.s)}
+                <rect class={`seat ${st}`} data-testid={`seat-${c.r}-${c.b}-${c.s}`} data-state={st}
+                      x={c.x} y={c.y} width={SEAT} height={SEAT} rx="5"
+                      role="button" tabindex="0" aria-label={`R${c.r + 1} S${c.s + 1}`}
+                      onclick={() => claim(c.r, c.b, c.s)}
+                      onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && claim(c.r, c.b, c.s)} />
+              {/each}
+            </svg>
 
-        <div class="legend">
-          <span><i class="sw free"></i> {t('legend.free')}</span>
-          <span><i class="sw occupied"></i> {t('legend.occupied')}</span>
-          <span><i class="sw mine"></i> {t('legend.mine')}</span>
-          <span><i class="sw blocked"></i> {t('legend.blocked')}</span>
+            <div class="legend">
+              <span><i class="sw free"></i> {t('legend.free')}</span>
+              <span><i class="sw occupied"></i> {t('legend.occupied')}</span>
+              <span><i class="sw mine"></i> {t('legend.mine')}</span>
+              <span><i class="sw blocked"></i> {t('legend.blocked')}</span>
+            </div>
+
+            <div class="help">
+              {#if helpActive}
+                <span class="help-status" data-testid="help-status">
+                  {myHelp === 'CLAIMED' ? t('help.coming') : t('help.requested')}
+                </span>
+                <button class="ghost" data-testid="help-cancel" onclick={cancelHelp}>{t('help.cancel')}</button>
+              {:else}
+                <button class="help-btn" data-testid="help-button" onclick={raiseHelp}>{t('help.need')}</button>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <div class="chat-col">
+          <h2 class="chat-title">{t('chat.title')}</h2>
+          <ul class="msgs" data-testid="chat-messages" bind:this={chatBox}>
+            {#each chat as m (m.id)}
+              <li class="msg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
+                <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
+                <span class="text">{m.body}</span>
+              </li>
+            {/each}
+            {#if !chat.length}<li class="empty hint">{t('chat.empty')}</li>{/if}
+          </ul>
+          <form class="chat-form" onsubmit={sendChat}>
+            <input data-testid="chat-input" autocomplete="off" maxlength="500"
+                   placeholder={t('chat.placeholder')} bind:value={chatInput} />
+            <button type="submit" data-testid="chat-send" disabled={!chatInput.trim()}>{t('chat.send')}</button>
+          </form>
         </div>
-
-        <div class="help">
-          {#if helpActive}
-            <span class="help-status" data-testid="help-status">
-              {myHelp === 'CLAIMED' ? t('help.coming') : t('help.requested')}
-            </span>
-            <button class="ghost" data-testid="help-cancel" onclick={cancelHelp}>{t('help.cancel')}</button>
-          {:else}
-            <button class="help-btn" data-testid="help-button" onclick={raiseHelp}>{t('help.need')}</button>
-          {/if}
-        </div>
-      {:else}
-        <p class="hint" data-testid="no-layout">{t('room.no-layout')}</p>
-      {/if}
+      </div>
     </section>
   {/if}
 
@@ -325,7 +375,7 @@
 
 <style>
   main {
-    max-width: 40rem;
+    max-width: 64rem;
     margin: 0 auto;
     padding: 2.5rem 1.25rem;
     display: flex;
@@ -346,6 +396,9 @@
     flex-direction: column;
     gap: 0.7rem;
     box-shadow: 0 8px 24px rgba(26, 20, 16, 0.12);
+    width: 100%;
+    max-width: 26rem;
+    align-self: center;
   }
   label { font-weight: 600; }
   input {
@@ -368,7 +421,7 @@
   }
   .speaker-id { margin: 0; font-weight: 700; color: var(--arago-bordeaux); }
 
-  .room { display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
+  .room { display: flex; flex-direction: column; gap: 0.9rem; align-items: stretch; }
   .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; }
   .mode {
     background: var(--arago-bordeaux); color: var(--arago-cream);
@@ -411,6 +464,40 @@
   .help-btn { background: var(--arago-gold); }
   .help-status { font-weight: 700; color: var(--arago-bordeaux); }
   .ghost { background: transparent; color: var(--arago-bordeaux); border: 1px solid var(--arago-bordeaux); }
+
+  /* Room layout: seat plan aside, chat as the main panel (single column on mobile). */
+  .room-body { width: 100%; display: flex; flex-direction: column; gap: 1rem; }
+  .room-body.two-col {
+    display: grid;
+    grid-template-columns: minmax(0, 22rem) 1fr;
+    gap: 1.2rem;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .room-body.two-col { grid-template-columns: 1fr; }
+  }
+  .seat-col { display: flex; flex-direction: column; gap: 0.8rem; align-items: center; }
+
+  .chat-col { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+  .chat-title { margin: 0; font-size: 1rem; color: var(--arago-bordeaux); }
+  .msgs {
+    list-style: none; margin: 0; padding: 0.6rem;
+    display: flex; flex-direction: column; gap: 0.4rem;
+    background: var(--arago-surface); border: 1px solid var(--arago-line);
+    border-radius: 0.6rem; height: clamp(14rem, 48vh, 32rem); overflow-y: auto;
+  }
+  .msg {
+    display: flex; flex-direction: column; max-width: 85%;
+    padding: 0.3rem 0.55rem; border-radius: 0.5rem;
+    background: var(--arago-paper); align-self: flex-start;
+  }
+  .msg.mine { align-self: flex-end; background: var(--arago-bordeaux); color: var(--arago-cream); }
+  .msg.from-speaker { align-self: center; background: var(--arago-gold); color: var(--arago-ink); }
+  .msg .who { font-size: 0.7rem; font-weight: 700; opacity: 0.85; }
+  .msg .text { white-space: pre-wrap; word-break: break-word; }
+  .empty { background: none; color: var(--arago-muted); align-self: center; }
+  .chat-form { display: flex; gap: 0.5rem; }
+  .chat-form input { flex: 1; min-width: 0; }
 
   footer { margin-top: auto; text-align: center; font-size: 0.85rem; }
   footer a { color: var(--arago-bordeaux); }

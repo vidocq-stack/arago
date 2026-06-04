@@ -36,6 +36,9 @@
   let revealInfo = $state(null);     // { secret, pin } after enabling reveal
   let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
   let stats = $state(null);          // { messages, persistentMessages, helpTotal, helpResolved, attendees }
+  let chatLog = $state([]);          // [{id, author, body, fromSpeaker}] live + replayed chat
+  let chatInput = $state('');
+  let chatBox = $state(null);        // chat scroll container ref
 
   const seatKey = (r, b, s) => `${r}-${b}-${s}`;
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
@@ -115,7 +118,7 @@
     room = r;
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; people = {}; editing = false;
-    revealInfo = null; revealState = null; stats = null;
+    revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
     const tk = await fetch(`/api/rooms/${r.id}/observer-token`, { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
@@ -145,7 +148,7 @@
       case 'seat': onSeat(m); break;
       case 'help': onHelp(m); break;
       case 'pin': onPin(m); break;
-      case 'chat': if (m.author) people = { ...people, [m.author]: true }; break;
+      case 'chat': onChat(m); break;
       case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
       default: break;
     }
@@ -173,6 +176,31 @@
     if (m.action === 'add' && m.pin) pins = [...pins.filter((p) => p.id !== m.pin.id), m.pin];
     else if (m.action === 'remove' && m.pin) pins = pins.filter((p) => p.id !== m.pin.id);
   }
+
+  // ---------- chat ----------
+  function onChat(m) {
+    if (m.author) people = { ...people, [m.author]: true };
+    chatLog = [...chatLog, {
+      id: m.id || `${Date.now()}-${chatLog.length}`,
+      author: m.author || '?',
+      body: m.body || '',
+      fromSpeaker: !!m.fromSpeaker,
+      mine: m.author === 'speaker', // the observer connects as the "speaker" pseudo
+    }].slice(-200);
+  }
+
+  function sendChat(e) {
+    e?.preventDefault();
+    const body = chatInput.trim();
+    if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ body }));
+    chatInput = '';
+  }
+
+  $effect(() => {
+    chatLog.length;
+    if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  });
 
   // ---------- help queue ----------
   async function loadHelp() {
@@ -442,6 +470,24 @@
           </ul>
         </div>
 
+        <div class="panel">
+          <h2>Chat</h2>
+          <ul class="chat-msgs" data-testid="speaker-chat" bind:this={chatBox}>
+            {#each chatLog as m (m.id)}
+              <li class="cmsg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
+                <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
+                <span class="text">{m.body}</span>
+              </li>
+            {/each}
+            {#if !chatLog.length}<li class="hint empty">Aucun message pour l'instant.</li>{/if}
+          </ul>
+          <form class="chat-form" onsubmit={sendChat}>
+            <input data-testid="speaker-chat-input" autocomplete="off" maxlength="500"
+                   placeholder="Message au public…" bind:value={chatInput} />
+            <button type="submit" data-testid="speaker-chat-send" disabled={!chatInput.trim()}>Envoyer</button>
+          </form>
+        </div>
+
         {#if room.mode !== 'LAB'}
           <div class="panel">
             <h2>Slides (reveal)</h2>
@@ -520,6 +566,21 @@
   .meta { font-size: 0.8rem; color: rgba(26,20,16,0.6); }
   .bar { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
   .panel { border-top: 1px solid var(--arago-gold); padding-top: 0.8rem; }
+  .chat-msgs {
+    list-style: none; margin: 0 0 0.5rem; padding: 0.5rem;
+    display: flex; flex-direction: column; gap: 0.35rem;
+    background: var(--arago-surface); border: 1px solid var(--arago-line);
+    border-radius: 0.5rem; height: clamp(10rem, 30vh, 22rem); overflow-y: auto;
+  }
+  .cmsg { display: flex; flex-direction: column; max-width: 85%; padding: 0.25rem 0.5rem;
+    border-radius: 0.45rem; background: var(--arago-paper); align-self: flex-start; }
+  .cmsg.mine { align-self: flex-end; background: var(--arago-bordeaux); color: var(--arago-cream); }
+  .cmsg.from-speaker { align-self: flex-end; background: var(--arago-gold); color: var(--arago-ink); }
+  .cmsg .who { font-size: 0.68rem; font-weight: 700; opacity: 0.85; }
+  .cmsg .text { white-space: pre-wrap; word-break: break-word; }
+  .chat-msgs .empty { background: none; align-self: center; }
+  .chat-form { display: flex; gap: 0.5rem; }
+  .chat-form input { flex: 1; min-width: 0; }
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .edit-toggle { font-size: 0.85rem; }
