@@ -10,7 +10,7 @@ Feature: Reveal deck plugin (Phase 4)
       """
       {"email":"rita@oidc.test","displayName":"Rita Speaker","role":"SPEAKER"}
       """
-    Then the response status is 201
+    Then the response status is 201 or 409
     Given a Keycloak token for user "rita"
     When I POST "/api/rooms" with body:
       """

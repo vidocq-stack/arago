@@ -10,7 +10,7 @@ Feature: Attendee RGPD self-service (magic link, access, portability, erasure) +
       """
       {"email":"karl@oidc.test","displayName":"Karl Speaker","role":"SPEAKER"}
       """
-    Then the response status is 201
+    Then the response status is 201 or 409
     Given a Keycloak token for user "karl"
     When I POST "/api/rooms" with body:
       """

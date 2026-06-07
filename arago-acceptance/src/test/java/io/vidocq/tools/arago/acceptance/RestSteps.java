@@ -169,6 +169,18 @@ public class RestSteps {
         assertEquals(expected, response.statusCode(), () -> "body: " + response.body());
     }
 
+    /**
+     * Tolerant assertion for idempotent provisioning: {@code 201} (created) or {@code 409} (already
+     * provisioned). The full acceptance suite runs {@code @ui} and non-{@code @ui} scenarios in one JVM
+     * against a shared database, so a Keycloak user provisioned as a speaker by one scenario is already
+     * present when its twin re-provisions the same email — both outcomes are valid here.
+     */
+    @Then("the response status is {int} or {int}")
+    public void the_response_status_is_either(int a, int b) {
+        int s = response.statusCode();
+        assertTrue(s == a || s == b, () -> "expected " + a + " or " + b + " but was: " + s + " body: " + response.body());
+    }
+
     @Then("the response header {string} contains {string}")
     public void the_response_header_contains(String name, String needle) {
         String value = response.headers().firstValue(name).orElse(null);
