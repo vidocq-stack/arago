@@ -78,7 +78,7 @@
         <!-- Vidocq stack. vauban est épinglé à la release 0.1.0 (Maven Central) ;
              les autres briques sont stabilisées plus tard, encore en SNAPSHOT. -->
         <vauban.version>0.2.0-SNAPSHOT</vauban.version>
-        <vidocq.runtime.version>0.1.0-SNAPSHOT</vidocq.runtime.version>
+        <vidocq.runtime.version>0.2.0-SNAPSHOT</vidocq.runtime.version>
         <cassini.version>0.1.0-SNAPSHOT</cassini.version>
         <chappe.version>0.2.0-SNAPSHOT</chappe.version>
         <champollion.version>0.1.0-SNAPSHOT</champollion.version>
@@ -119,42 +119,42 @@
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
+                <groupId>io.vidocq.runtime.extensions.jakartaee.core</groupId>
                 <artifactId>vidocq-runtime-cassini-rest-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
-                <artifactId>vidocq-runtime-ravel-extension</artifactId>
+                <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+                <artifactId>vidocq-runtime-ravel-config-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
-                <artifactId>vidocq-runtime-knock-extension</artifactId>
+                <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+                <artifactId>vidocq-runtime-knock-health-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
-                <artifactId>vidocq-runtime-dirac-extension</artifactId>
+                <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+                <artifactId>vidocq-runtime-dirac-metrics-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
+                <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
                 <artifactId>vidocq-runtime-cervantes-jwt-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
+                <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                 <artifactId>vidocq-runtime-mansart-pool-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
+                <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                 <artifactId>vidocq-runtime-mansart-data-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime</groupId>
+                <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                 <artifactId>vidocq-runtime-mansart-transactions-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>

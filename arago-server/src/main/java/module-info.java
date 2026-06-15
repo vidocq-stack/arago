@@ -27,18 +27,18 @@ module io.vidocq.tools.arago.server {
 
     requires io.vidocq.runtime.core;
     requires io.vidocq.runtime.spi;
-    requires io.vidocq.runtime.ext.rest.cassini;
+    requires io.vidocq.runtime.extensions.jakartaee.core.cassini;
     // Requis par la sortie APT cassini-processor ($$CassiniAdapter).
     requires io.vidocq.cassini.api;
-    requires io.vidocq.runtime.ext.mansart.pool;
-    requires io.vidocq.runtime.ext.mansart.data;
-    requires io.vidocq.runtime.ext.mansart.transactions;
-    requires io.vidocq.runtime.ext.ravel;
+    requires io.vidocq.runtime.extensions.jakartaee.web.mansart.pool;
+    requires io.vidocq.runtime.extensions.jakartaee.web.mansart.data;
+    requires io.vidocq.runtime.extensions.jakartaee.web.mansart.transactions;
+    requires io.vidocq.runtime.extensions.microprofile.ravel;
     // MP Config API — @ConfigProperty injection of superadmin/attendee settings (resolved by ravel).
     requires org.eclipse.microprofile.config;
-    requires io.vidocq.runtime.ext.knock;
+    requires io.vidocq.runtime.extensions.microprofile.knock;
     // MicroProfile JWT (cervantes) — validate Keycloak Bearer tokens; inject JsonWebToken in resources.
-    requires io.vidocq.runtime.ext.cervantes.jwt;
+    requires io.vidocq.runtime.extensions.microprofile.cervantes;
     requires org.eclipse.microprofile.jwt;
     // MicroProfile Metrics (dirac) — @Gauge for the active-rooms metric exposed at /metrics (§12).
     requires microprofile.metrics.api;

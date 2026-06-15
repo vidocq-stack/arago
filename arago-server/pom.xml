@@ -13,7 +13,7 @@
     <artifactId>arago-server</artifactId>
     <packaging>jar</packaging>
     <name>arago :: server</name>
-    <description>Runtime Vidocq : REST Cassini + Mansart Data (PostgreSQL) + Flyway + bootstrap.</description>
+    <description>Runtime Vidocq: REST Cassini + Mansart Data (PostgreSQL) + Flyway + bootstrap.</description>
 
     <properties>
         <vidocq.mainModule>io.vidocq.tools.arago.server</vidocq.mainModule>
@@ -27,47 +27,47 @@
             <artifactId>vidocq-runtime-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
+            <groupId>io.vidocq.runtime.extensions.jakartaee.core</groupId>
             <artifactId>vidocq-runtime-cassini-rest-extension</artifactId>
         </dependency>
         <!-- MicroProfile Config (opt-in) : lit vidocq.properties via MP ConfigSource. -->
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
-            <artifactId>vidocq-runtime-ravel-extension</artifactId>
+            <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+            <artifactId>vidocq-runtime-ravel-config-extension</artifactId>
         </dependency>
         <!-- MicroProfile Health → /health, /health/live|ready|started au chemin racine standard.
              Le runtime knock-extension porte la ressource @Path (adapter Cassini + index Vauban
              pré-générés) ; knock-cdi-vauban livre son index Vauban (HealthCheckRegistry résolu) ;
              le mount /health est scopé au package knock via vidocq.properties. ARAGO-002/003 résolus. -->
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
-            <artifactId>vidocq-runtime-knock-extension</artifactId>
+            <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+            <artifactId>vidocq-runtime-knock-health-extension</artifactId>
         </dependency>
         <!-- MicroProfile Metrics (dirac) → /metrics (OpenMetrics/Prometheus). Comme knock : dirac-rest
              est un module JAX-RS pur (adapter Cassini tissé dans une copie repackagée au build ci-dessous,
              index Vauban embarqué dans dirac-rest pour la découverte) ; dirac-cdi-vauban livre la BCE +
              les producteurs MetricRegistry ; le mount /metrics est scopé au package dirac.rest. ARAGO-001. -->
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
-            <artifactId>vidocq-runtime-dirac-extension</artifactId>
+            <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
+            <artifactId>vidocq-runtime-dirac-metrics-extension</artifactId>
         </dependency>
         <!-- MicroProfile JWT (cervantes) : valide les Bearer RS256 émis par Keycloak (OIDC). -->
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
+            <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
             <artifactId>vidocq-runtime-cervantes-jwt-extension</artifactId>
         </dependency>
 
         <!-- Mansart pool + Jakarta Data + transactions -->
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
+            <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
             <artifactId>vidocq-runtime-mansart-pool-extension</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
+            <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
             <artifactId>vidocq-runtime-mansart-data-extension</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vidocq.runtime</groupId>
+            <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
             <artifactId>vidocq-runtime-mansart-transactions-extension</artifactId>
         </dependency>
         <!-- Dialecte PostgreSQL + driver JDBC (runtime). -->
@@ -211,19 +211,19 @@
                             <type>pom</type>
                         </path>
                         <path>
-                            <groupId>io.vidocq.runtime</groupId>
+                            <groupId>io.vidocq.runtime.extensions.jakartaee.core</groupId>
                             <artifactId>vidocq-runtime-cassini-rest-extension-codegen</artifactId>
                             <version>${vidocq.runtime.version}</version>
                             <type>pom</type>
                         </path>
                         <path>
-                            <groupId>io.vidocq.runtime</groupId>
+                            <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                             <artifactId>vidocq-runtime-mansart-data-extension-codegen</artifactId>
                             <version>${vidocq.runtime.version}</version>
                             <type>pom</type>
                         </path>
                         <path>
-                            <groupId>io.vidocq.runtime</groupId>
+                            <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                             <artifactId>vidocq-runtime-mansart-transactions-extension-codegen</artifactId>
                             <version>${vidocq.runtime.version}</version>
                             <type>pom</type>
@@ -237,6 +237,28 @@
                 <groupId>io.vidocq.runtime</groupId>
                 <artifactId>vidocq-runtime-maven-plugin</artifactId>
                 <version>${vidocq.runtime.version}</version>
+                <!-- Dev mode (vidocq:dev): provisions Postgres + Keycloak on local Docker and forks the
+                     app with a JDWP debug agent on :5005. These are build-tooling deps living on the
+                     plugin classpath only — never on the runtime module-path nor in the AOT image. -->
+                <dependencies>
+                    <dependency>
+                        <groupId>io.vidocq.runtime</groupId>
+                        <artifactId>vidocq-runtime-devservice-postgres</artifactId>
+                        <version>${vidocq.runtime.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>io.vidocq.runtime</groupId>
+                        <artifactId>vidocq-runtime-devservice-keycloak</artifactId>
+                        <version>${vidocq.runtime.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <!-- Applies to the CLI-invoked `vidocq:dev`; the `generate` execution ignores these
+                         unknown params. Keycloak realm import + app-key mappings + dev-only secrets
+                         (superadmin password is "arago-dev"). Datasource + issuer are injected live by
+                         the DevServices, so they are intentionally absent here. -->
+                    <systemProperties>vidocq.dev.keycloak.realm-import=../docker/keycloak/arago-realm.json,vidocq.dev.keycloak.realm=arago,vidocq.dev.keycloak.issuer-keys=arago.oidc.issuer,vidocq.dev.keycloak.public-url-key=arago.public.url,arago.oidc.web-client-id=arago-web,arago.superadmin.username=root,arago.superadmin.password-hash=$pbkdf2-sha256$i=600000$R8Y2xZt2A1l+AW/lPOmJVQ$F10mN4idJcNvNk+G7UGdD3oxdunzBGq9jy7XXn4OCtU,arago.attendee.hmac-secret=0123456789abcdef0123456789abcdef,arago.mail.dev-expose-link=true,arago.pins.preview.allow-private=true</systemProperties>
+                </configuration>
                 <executions>
                     <execution>
                         <id>generate</id>
