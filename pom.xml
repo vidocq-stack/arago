@@ -79,10 +79,10 @@
              les autres briques sont stabilisées plus tard, encore en SNAPSHOT. -->
         <vauban.version>0.2.0-SNAPSHOT</vauban.version>
         <vidocq.runtime.version>0.2.0-SNAPSHOT</vidocq.runtime.version>
-        <cassini.version>0.1.0-SNAPSHOT</cassini.version>
+        <cassini.version>0.2.0-SNAPSHOT</cassini.version>
         <chappe.version>0.2.0-SNAPSHOT</chappe.version>
-        <champollion.version>0.1.0-SNAPSHOT</champollion.version>
-        <mansart.version>0.1.0-SNAPSHOT</mansart.version>
+        <champollion.version>0.2.0-SNAPSHOT</champollion.version>
+        <mansart.version>0.2.0-SNAPSHOT</mansart.version>
 
         <!-- Jakarta / MicroProfile (API uniquement, runtime fourni par Vidocq) -->
         <jakarta.ws.rs.version>4.0.0</jakarta.ws.rs.version>
