@@ -160,6 +160,16 @@
                 <artifactId>vidocq-runtime-mansart-transactions-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime.extensions.essentials</groupId>
+                <artifactId>vidocq-runtime-migration-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vidocq.runtime.extensions.essentials</groupId>
+                <artifactId>vidocq-runtime-flyway-migration-extension</artifactId>
+                <version>${vidocq.runtime.version}</version>
+            </dependency>
 
             <!-- Mansart dialecte PostgreSQL -->
             <dependency>

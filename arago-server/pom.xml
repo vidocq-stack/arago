@@ -82,18 +82,18 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Migrations Flyway (pas d'extension Vidocq : câblage via FlywayMigrator). -->
+        <!-- Schema migrations via the Vidocq Flyway extension (replaces the hand-wired FlywayMigrator).
+             The extension brings flyway-core + flyway-database-postgresql transitively and runs the
+             migration at boot (priority 150, before the pool) from vidocq.pool.* — see DEV_SERVICES.md.
+             Scripts stay under src/main/resources/db/migration (Flyway default); module-info keeps
+             `opens db.migration`. -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-            <!-- module-info `requires flyway.core` : sous maven-compiler-plugin 3.x, les deps d'un
-                 projet modulaire (module-info présent) vont sur le module-path, les jars sans
-                 module-info devenant des modules automatiques (`flyway.core` ← nom du jar). -->
+            <groupId>io.vidocq.runtime.extensions.essentials</groupId>
+            <artifactId>vidocq-runtime-migration-extension</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-            <scope>runtime</scope>
+            <groupId>io.vidocq.runtime.extensions.essentials</groupId>
+            <artifactId>vidocq-runtime-flyway-migration-extension</artifactId>
         </dependency>
 
         <!-- Transport -->

@@ -47,8 +47,11 @@ module io.vidocq.tools.arago.server {
     requires io.vidocq.vauban.core;
     requires io.vidocq.mansart.data.core;
 
-    // Migrations DB. Flyway ne fixe pas d'Automatic-Module-Name : nom dérivé du jar.
-    requires flyway.core;
+    // Schema migrations via the Vidocq Flyway extension (the runner + the Flyway backend). The
+    // extension pulls flyway.core / flyway.database.postgresql transitively; the migration runs at
+    // boot from vidocq.pool.* — no FlywayMigrator class needed any more.
+    requires io.vidocq.runtime.extensions.essentials.migration;
+    requires io.vidocq.runtime.extensions.essentials.migration.flyway;
 
     // JAX-RS et CDI réfléchissent sur ressources, beans et entités ; JSON-B sur les records/entités.
     opens io.vidocq.tools.arago.server;

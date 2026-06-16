@@ -4,6 +4,8 @@ import io.vidocq.tools.arago.persistence.Role;
 import io.vidocq.tools.arago.persistence.Speaker;
 import io.vidocq.tools.arago.persistence.SpeakerRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.Initialized;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.ConfigProvider;
 
@@ -19,9 +21,10 @@ import java.util.logging.Logger;
  * by {@code arago.dev.seed-speaker} (the email); unset (the prod default) makes this a no-op.
  *
  * <p>Authentication still goes through Keycloak — this only short-circuits the <em>authorization</em>
- * side (the allowlist the superadmin would otherwise manage). It is invoked by {@link FlywayMigrator}
- * <em>after</em> migrations so the {@code speakers} table exists; running it as an independent
- * {@code @Initialized(ApplicationScoped.class)} observer would race the migrator.</p>
+ * side (the allowlist the superadmin would otherwise manage). It runs as its own
+ * {@code @Observes @Initialized(ApplicationScoped.class)} observer; the schema (incl. the
+ * {@code speakers} table) is already migrated by the Vidocq Flyway extension during {@code beforeStart}
+ * — before the CDI container boots — so there is no race with the migration.</p>
  *
  * <p>Config: {@code arago.dev.seed-speaker} — a comma-separated list of emails, each optionally carrying
  * its role as {@code email=ROLE} (e.g. {@code speakera@oidc.test=ADMIN,speakerb@oidc.test}). A bare email
@@ -43,6 +46,14 @@ public class DevSpeakerSeeder {
 
     DevSpeakerSeeder(SpeakerRepository speakers) {
         this.speakers = speakers;
+    }
+
+    /**
+     * Seeds at container start. Migrations have already run in the Flyway extension's
+     * {@code beforeStart} (before the container boots), so the {@code speakers} table exists.
+     */
+    void onStart(@Observes @Initialized(ApplicationScoped.class) Object event) {
+        seedIfConfigured();
     }
 
     /** Reads {@code arago.dev.seed-speaker} (+ role/name) and seeds each entry; a blank/absent value is a no-op. */
