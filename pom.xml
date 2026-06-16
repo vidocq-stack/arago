@@ -103,7 +103,9 @@
 
         <!-- Test -->
         <junit.version>5.11.4</junit.version>
-        <testcontainers.version>1.20.4</testcontainers.version>
+        <!-- 2.x required for OrbStack on macOS (1.x's unix-socket transport does not detect it);
+             pair with DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock. -->
+        <testcontainers.version>2.0.3</testcontainers.version>
 
         <!-- Outillage front (build-only) -->
         <frontend.plugin.version>1.15.1</frontend.plugin.version>
