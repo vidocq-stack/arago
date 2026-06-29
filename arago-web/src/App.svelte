@@ -462,9 +462,12 @@
         </section>
       {/if}
 
-      <div class="room-body" class:two-col={!!geom && !!mySeat}>
+      <div class="room-body" class:two-col={!!geom}>
         {#if geom}
           <div class="seat-col">
+            {#if !mySeat}
+              <p class="seat-prompt" data-testid="seat-prompt">{t('room.choose-location')}</p>
+            {/if}
             <svg class="map" data-testid="seating-map" viewBox={`0 0 ${geom.width} ${geom.height}`}
                  width={geom.width} height={geom.height} role="group" aria-label={t('room.map-aria')}>
               <defs>
@@ -673,6 +676,11 @@
     .room-body.two-col { grid-template-columns: 1fr; }
   }
   .seat-col { display: flex; flex-direction: column; gap: 0.8rem; align-items: center; }
+  .seat-prompt {
+    margin: 0; align-self: stretch; text-align: center; font-weight: 700;
+    color: var(--arago-cream); background: var(--arago-bordeaux);
+    padding: 0.45rem 0.7rem; border-radius: 0.5rem;
+  }
 
   .chat-col { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
   .chat-title { margin: 0; font-size: 1rem; color: var(--arago-bordeaux); }
