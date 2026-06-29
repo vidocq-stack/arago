@@ -10,12 +10,12 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 /**
- * Local allowlist entry for a speaker (cf. arago-spec §4.2/§4.8). Authentication is delegated to
- * Keycloak (OIDC); <em>authorization</em> is this table, managed by the superadmin.
+ * Local speaker account + allowlist entry (cf. arago-spec §4.2/§4.8). Authentication is local:
+ * the speaker logs in with {@code email} + password ({@link #getPasswordHash()}, a PBKDF2 PHC string).
+ * The superadmin creates/manages the entry and sets the initial password.
  *
- * <p>A speaker is invited by email (the matching key). The {@code oidcSub} is filled in on the first
- * successful OIDC login, binding the Keycloak identity to this entry. The effective role comes from
- * {@link #getRole()} here, not from Keycloak realm roles.</p>
+ * <p>The effective role comes from {@link #getRole()}. {@code oidcSub} is a vestige of the former
+ * Keycloak integration — kept nullable for history, no longer read or written.</p>
  */
 @Entity
 @Table(name = "speakers")
@@ -28,9 +28,13 @@ public class Speaker {
     @Column(nullable = false, unique = true)
     private String email;
 
-    /** OIDC {@code sub}, null until the first login; unique once set. */
+    /** OIDC {@code sub} — vestigial (former Keycloak binding), nullable, no longer used. */
     @Column(name = "oidc_sub", unique = true)
     private String oidcSub;
+
+    /** PBKDF2 PHC password hash (cf. PasswordHasher); null until the admin sets an initial password. */
+    @Column(name = "password_hash")
+    private String passwordHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -79,6 +83,8 @@ public class Speaker {
     public void    setEmail(String email)           { this.email = email;    }
     public String  getOidcSub()                     { return oidcSub;        }
     public void    setOidcSub(String oidcSub)       { this.oidcSub = oidcSub; }
+    public String  getPasswordHash()                { return passwordHash;   }
+    public void    setPasswordHash(String hash)     { this.passwordHash = hash; }
     public Role    getRole()                        { return role;           }
     public void    setRole(Role role)               { this.role = role;      }
     public boolean isEnabled()                      { return enabled;        }

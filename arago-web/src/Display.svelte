@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { t, applyLang } from './lib/i18n.svelte.js';
-  import { applyTheme } from './lib/theme.svelte.js';
 
   // Public projector / lobby screen (arago-spec §4.1): no auth, opened from the speaker console
   // ("Afficher"). Shows the room title + a big PIN for attendees to join, plus a live headcount the
@@ -27,7 +26,6 @@
 
   onMount(() => {
     applyLang();
-    applyTheme();
     refresh();
     const id = setInterval(refresh, 3000);
     return () => clearInterval(id);

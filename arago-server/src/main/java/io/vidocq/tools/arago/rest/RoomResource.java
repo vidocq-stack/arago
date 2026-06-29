@@ -2,7 +2,7 @@ package io.vidocq.tools.arago.rest;
 
 import io.vidocq.tools.arago.attachments.AttachmentStore;
 import io.vidocq.tools.arago.auth.AragoJwt;
-import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
+import io.vidocq.tools.arago.speaker.SpeakerAuthenticator;
 import io.vidocq.tools.arago.persistence.AttendeeProfile;
 import io.vidocq.tools.arago.persistence.AttendeeProfileRepository;
 import io.vidocq.tools.arago.history.Exports;
@@ -50,16 +50,14 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.SecurityContext;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -67,9 +65,9 @@ import java.util.UUID;
 
 /**
  * Room lifecycle for speakers (cf. arago-spec §4.1, §8). Mounted under {@code /api} by Cassini →
- * {@code /api/rooms}. Every mutating/owning endpoint requires a valid Keycloak Bearer (validated by
- * cervantes/MP-JWT, which sets the {@link SecurityContext} principal to the {@link JsonWebToken})
- * AND a provisioned speaker in the local allowlist; the room's owner is the speaker's OIDC subject.
+ * {@code /api/rooms}. Every mutating/owning endpoint requires a valid local speaker token
+ * ({@code Authorization: Bearer}, verified by {@link SpeakerAuthenticator}) for an enabled speaker;
+ * the room's owner subject is the speaker's id.
  *
  * <ul>
  *   <li>{@code POST /api/rooms} — create an ACTIVE room with a fresh PIN;</li>
@@ -79,15 +77,15 @@ import java.util.UUID;
  *   <li>{@code GET  /api/rooms/count} — public counters (Phase 0, feeds the metrics gauge).</li>
  * </ul>
  *
- * <p>{@code @RequestScoped} because the per-request {@link SecurityContext} is read via
- * {@code @Context} (see {@code OidcResource} for the same pattern).</p>
+ * <p>{@code @RequestScoped} because the per-request {@link HttpHeaders} (carrying the bearer token) is
+ * read via {@code @Context}.</p>
  */
 @RequestScoped
 @Path("/rooms")
 public class RoomResource {
 
     @Context
-    SecurityContext securityContext;
+    HttpHeaders httpHeaders;
 
     @Inject
     RoomRepository rooms;
@@ -96,7 +94,7 @@ public class RoomResource {
     PinGenerator pins;
 
     @Inject
-    SpeakerAllowlist allowlist;
+    SpeakerAuthenticator speakerAuth;
 
     @Inject
     AttendeeProfileRepository attendees;
@@ -166,7 +164,7 @@ public class RoomResource {
             byId.put(r.getId(), RoomView.of(r, true, null));
         }
         // Then rooms the caller co-manages (matched by their allowlist email), with the owner's name.
-        String email = speakers.findByOidcSub(ownerSub).map(Speaker::getEmail).orElse(null);
+        String email = speakers.findById(ownerSub).map(Speaker::getEmail).orElse(null);
         if (email != null) {
             for (RoomManager rm : managers.findBySpeakerEmail(email)) {
                 if (byId.containsKey(rm.getRoomId())) {
@@ -181,7 +179,7 @@ public class RoomResource {
 
     /** Display name (or email) of a room's owner, for showing on co-managed rooms. */
     private String ownerName(Room r) {
-        return speakers.findByOidcSub(r.getOwnerSub())
+        return speakers.findById(r.getOwnerSub())
                 .map(s -> s.getDisplayName() != null && !s.getDisplayName().isBlank()
                         ? s.getDisplayName() : s.getEmail())
                 .orElse(null);
@@ -295,7 +293,7 @@ public class RoomResource {
         }
         if (managers.findByRoomIdAndSpeakerEmail(id, email).isEmpty()) {
             managers.save(new RoomManager(UUID.randomUUID().toString(), id, email,
-                    speaker.getOidcSub(), Instant.now()));
+                    speaker.getId(), Instant.now()));
         }
         return Response.status(Response.Status.CREATED)
                 .entity(new ManagerView(email, speaker.getPseudo())).build();
@@ -329,7 +327,7 @@ public class RoomResource {
     }
 
     private String displayEmailOfOwner(Room room) {
-        return speakers.findByOidcSub(room.getOwnerSub()).map(Speaker::getEmail).orElse(null);
+        return speakers.findById(room.getOwnerSub()).map(Speaker::getEmail).orElse(null);
     }
 
     /**
@@ -920,7 +918,7 @@ public class RoomResource {
 
     /** Whether {@code sub} is an invited co-speaker of the room (matched by the speaker's allowlist email). */
     private boolean isCoManager(String roomId, String sub) {
-        return speakers.findByOidcSub(sub)
+        return speakers.findById(sub)
                 .map(s -> !managers.findByRoomIdAndSpeakerEmail(roomId, s.getEmail()).isEmpty())
                 .orElse(false);
     }
@@ -933,28 +931,13 @@ public class RoomResource {
     }
 
     /**
-     * Resolves the authenticated, allowlisted speaker's OIDC subject, or aborts: {@code 401} if no
-     * valid token (no JWT principal), {@code 403} if the identity is not provisioned/enabled.
+     * Resolves the authenticated, enabled speaker's id (the room owner/co-speaker subject), or aborts
+     * {@code 401} if the {@code Authorization: Bearer} speaker token is missing, invalid, expired, or the
+     * speaker is unknown/disabled.
      */
     private String requireProvisionedSpeaker() {
-        Principal principal = securityContext == null ? null : securityContext.getUserPrincipal();
-        if (!(principal instanceof JsonWebToken jwt)) {
-            throw new WebApplicationException(Response.Status.UNAUTHORIZED);
-        }
-        if (allowlist.authorize(emailClaim(jwt), jwt.getSubject()).isEmpty()) {
-            throw new WebApplicationException(Response.Status.FORBIDDEN);
-        }
-        return jwt.getSubject();
-    }
-
-    /** Reads the {@code email} claim robustly (cervantes may expose it as a String or a JsonString). */
-    private static String emailClaim(JsonWebToken token) {
-        Object raw = token.getClaim("email");
-        return switch (raw) {
-            case null -> null;
-            case String s -> s;
-            case jakarta.json.JsonString js -> js.getString();
-            default -> raw.toString();
-        };
+        return speakerAuth.authenticate(httpHeaders.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .map(Speaker::getId)
+                .orElseThrow(() -> new WebApplicationException(Response.Status.UNAUTHORIZED));
     }
 }

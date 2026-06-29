@@ -8,15 +8,19 @@
     return m ? qrToSvg(m, { size: 150 }) : null;
   }
   import Prefs from './lib/Prefs.svelte';
-  // Speaker console (arago-spec §9). OIDC login (return=/speaker), "my rooms" list + create, and per
+  import { loadSpeakerSession, saveSpeakerSession, clearSpeakerSession, loginSpeaker }
+    from './lib/speakerSession.svelte.js';
+  // Speaker console (arago-spec §9). Local email+password login, "my rooms" list + create, and per
   // room: a LIVE top-down view (observer token → room WebSocket), the help queue (claim/resolve), a
   // layout editor (toggle blocked seats → PUT layout), pins (add/list/reorder DnD/delete), and
   // moderation (mute/kick). Reuses the attendee WebSocket path read-only via an observer token.
 
-  // --- auth ---
-  let token = $state(null);          // Keycloak access token (in memory)
-  let me = $state(null);             // { email, role }
+  // --- auth (local; token + identity persisted per-tab in sessionStorage) ---
+  let token = $state(null);          // Arago HS256 speaker token
+  let me = $state(null);             // { email, role, id, pseudo, name }
   let authError = $state('');
+  let loginEmail = $state('');
+  let loginPassword = $state('');
 
   // --- rooms ---
   let rooms = $state([]);
@@ -58,11 +62,15 @@
     e?.preventDefault();
     const base = pseudoInput.trim();
     if (!base) return;
-    const res = await fetch('/api/oidc/me/pseudo', {
+    const res = await fetch('/api/speaker/me/pseudo', {
       method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ pseudo: base }),
     });
-    if (res.ok) { me = await res.json(); pseudoInput = me.pseudo || ''; }
+    if (res.ok) {
+      me = await res.json();
+      pseudoInput = me.pseudo || '';
+      saveSpeakerSession(token, me); // keep the persisted identity in sync with the new pseudo
+    }
   }
 
   /** The pseudo to expose on the room WebSocket (their chat author), or a neutral fallback. */
@@ -80,8 +88,31 @@
   const authHeaders = () => ({ Authorization: `Bearer ${token}` });
 
   // ---------- auth ----------
-  function login() {
-    window.location.assign('/api/oidc/login?return=/speaker');
+  async function doLogin(e) {
+    e?.preventDefault();
+    authError = '';
+    try {
+      const { token: tk, me: m } = await loginSpeaker(loginEmail.trim().toLowerCase(), loginPassword);
+      token = tk; me = m; pseudoInput = m.pseudo || '';
+      loginPassword = '';
+      await loadRooms();
+    } catch (err) {
+      authError =
+        err.message === 'not_configured' ? "L'authentification n'est pas configurée sur ce serveur."
+        : err.message === 'rate_limited' ? 'Trop de tentatives — réessayez dans une minute.'
+        : 'Identifiants invalides.';
+    }
+  }
+
+  function logout() {
+    clearSpeakerSession();
+    closeRoom();
+    token = null; me = null; rooms = []; loginEmail = ''; loginPassword = ''; authError = '';
+  }
+
+  /** Manual data refresh (SPA): re-pull REST state without reloading the page. */
+  async function refresh() {
+    if (room) { await openRoom(room); } else { await loadRooms(); }
   }
 
   // Opens the public attendee/projector screen for a room (title + PIN + live headcount) in a new tab,
@@ -96,29 +127,20 @@
     return () => clearInterval(id);
   });
 
+  // Restore a persisted session on load (per-tab, survives refresh). Validate the token via
+  // /api/speaker/me; if it is gone/expired, clear and fall back to the login form.
   onMount(async () => {
-    const params = new URLSearchParams(window.location.search);
-    const ok = params.get('login') === 'ok';
-    const err = params.get('oidc_error');
-    if (ok || err) window.history.replaceState({}, '', window.location.pathname);
-    if (err) {
-      authError =
-        err === 'speaker_not_provisioned' ? 'Compte non provisionné — demandez à un administrateur.'
-        : err === 'oidc_not_configured' ? "La connexion par identité n'est pas configurée sur ce serveur."
-        : 'Connexion impossible.';
-      return;
-    }
-    if (!ok) return;
+    const s = loadSpeakerSession();
+    if (!s) return;
+    token = s.token;
     try {
-      const res = await fetch('/api/oidc/token', { method: 'POST' });
-      if (!res.ok) { authError = 'Connexion impossible.'; return; }
-      token = (await res.json()).accessToken;
-      const meRes = await fetch('/api/oidc/me', { headers: authHeaders() });
-      if (!meRes.ok) { authError = 'Connexion impossible.'; return; }
+      const meRes = await fetch('/api/speaker/me', { headers: authHeaders() });
+      if (!meRes.ok) { logout(); return; }
       me = await meRes.json();
       pseudoInput = me.pseudo || '';
+      saveSpeakerSession(token, me);
       await loadRooms();
-    } catch { authError = 'Connexion impossible.'; }
+    } catch { logout(); }
   });
 
   // ---------- rooms ----------
@@ -213,6 +235,7 @@
       case 'pin': onPin(m); break;
       case 'chat': onChat(m); break;
       case 'presence': onPresence(m); break;
+      case 'rename': onRename(m); break;
       case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
       default: break;
     }
@@ -246,6 +269,18 @@
     helps = active ? [...others, m] : others;
     // A brand-new pending request (not part of the initial replay) — chime for the speaker.
     if (m.status === 'PENDING' && !known) beep(880, 220);
+  }
+
+  // A pseudo change (attendee §17.1 or speaker §17.3): relabel everywhere the old handle appears.
+  function onRename(m) {
+    if (!m.old || !m.new || m.old === m.new) return;
+    const next = {};
+    for (const [k, v] of Object.entries(seats)) next[k] = v === m.old ? m.new : v;
+    seats = next;
+    chatLog = chatLog.map((c) => c.author === m.old ? { ...c, author: m.new } : c);
+    if (attendeesPresent[m.old]) { const a = { ...attendeesPresent }; delete a[m.old]; a[m.new] = true; attendeesPresent = a; }
+    if (speakersPresent[m.old]) { const s = { ...speakersPresent }; delete s[m.old]; s[m.new] = true; speakersPresent = s; }
+    if (muted[m.old]) { const mu = { ...muted }; delete mu[m.old]; mu[m.new] = true; muted = mu; }
   }
 
   function onPin(m) {
@@ -548,7 +583,13 @@
   {#if !me}
     <section class="card">
       <p class="hint">Connectez-vous pour gérer vos rooms.</p>
-      <button type="button" data-testid="speaker-login" onclick={login}>Se connecter (Keycloak)</button>
+      <form class="login" onsubmit={doLogin}>
+        <input type="email" autocomplete="username" data-testid="speaker-email"
+               placeholder="email" bind:value={loginEmail} />
+        <input type="password" autocomplete="current-password" data-testid="speaker-password"
+               placeholder="mot de passe" bind:value={loginPassword} />
+        <button type="submit" data-testid="speaker-login">Se connecter</button>
+      </form>
       {#if authError}<p class="error" data-testid="speaker-error">{authError}</p>{/if}
     </section>
   {:else}
@@ -558,6 +599,8 @@
         <input data-testid="speaker-name" placeholder="choisir un pseudo" bind:value={pseudoInput} />
         <button type="submit" class="ghost" data-testid="save-pseudo">Pseudo</button>
       </form>
+      <button type="button" class="ghost" data-testid="speaker-refresh" onclick={refresh}>↻ Rafraîchir</button>
+      <button type="button" class="ghost" data-testid="speaker-logout" onclick={logout}>Déconnexion</button>
     </div>
     {#if toast}<p class="ok" data-testid="speaker-toast">{toast}</p>{/if}
 
@@ -874,6 +917,7 @@
   .chat-form > input { flex: 1; min-width: 0; }
   .speaker-name { font-size: 0.8rem; display: flex; gap: 0.3rem; align-items: center; }
   .speaker-name input { width: 8rem; }
+  .login { display: flex; flex-direction: column; gap: 0.5rem; max-width: 20rem; }
   .attach-btn {
     flex-shrink: 0; cursor: pointer; font-size: 1.15rem; line-height: 1;
     padding: 0.3rem 0.45rem; border: 1px solid var(--arago-bordeaux); border-radius: 0.45rem;

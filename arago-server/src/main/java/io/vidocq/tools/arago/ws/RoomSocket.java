@@ -567,6 +567,24 @@ public class RoomSocket implements WebSocketHandler {
     }
 
     /**
+     * Propagates a speaker's pseudo change (§17.3) to a room's peers so chat authors relabel live
+     * (same {@code rename} frame as the attendee self-rename). Also relabels any connected observer
+     * socket still holding the old pseudo, so a speaker who keeps the room open keeps a consistent
+     * author name. Called by the speaker pseudo endpoint for each room the speaker manages.
+     */
+    public void broadcastSpeakerRename(String roomId, String oldPseudo, String newPseudo) {
+        Set<WebSocket> set = peers.get(roomId);
+        if (set != null) {
+            for (WebSocket peer : set) {
+                if (oldPseudo.equals(peer.attribute("pseudo"))) {
+                    peer.attribute("pseudo", newPseudo);
+                }
+            }
+        }
+        broadcast(roomId, renameEvent(oldPseudo, newPseudo));
+    }
+
+    /**
      * Live headcount of distinct attendees currently connected to the room — the number the public
      * lobby/display screen polls. Excludes the speaker's read-only observer ({@link #OBSERVER_PSEUDO})
      * and the reveal deck (no pseudo); distinct by pseudo, so an attendee with several tabs counts once.

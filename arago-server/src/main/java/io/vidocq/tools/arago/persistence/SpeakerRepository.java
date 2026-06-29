@@ -10,8 +10,9 @@ import java.util.Optional;
  * Jakarta Data repository for the speaker allowlist ({@link Speaker}). Mansart generates the
  * implementation at compile-time (APT); the {@code mansart-data-cdi} BCE wires it into Vauban.
  *
- * <p>{@link #findByEmail(String)} resolves the allowlist at OIDC login; {@link #findByOidcSub(String)}
- * resolves an already-bound identity. CRUD and {@code findAll()} (as a {@code Stream}) come from
+ * <p>{@link #findByEmail(String)} resolves the account at login; {@link #findByPseudo(String)} resolves
+ * a co-speaker invite handle. The owner/co-speaker subject is the entity id, so {@code findById} (from
+ * {@link BasicRepository}) resolves it. CRUD and {@code findAll()} (as a {@code Stream}) come from
  * {@link BasicRepository}.</p>
  */
 @Transactional
@@ -19,8 +20,6 @@ import java.util.Optional;
 public interface SpeakerRepository extends BasicRepository<Speaker, String> {
 
     Optional<Speaker> findByEmail(String email);
-
-    Optional<Speaker> findByOidcSub(String oidcSub);
 
     Optional<Speaker> findByPseudo(String pseudo);
 

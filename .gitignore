@@ -30,7 +30,10 @@ arago-web/target/node/
 *.tsbuildinfo
 
 # IDE
-.idea/
+# Ignore the whole .idea/ EXCEPT the committed run configs and the dev datasource definition,
+# so IntelliJ picks them up out of the box (cf. .run/ and README "Dev depuis IntelliJ").
+.idea/*
+!.idea/dataSources.xml
 .vscode/
 *.iml
 *.ipr

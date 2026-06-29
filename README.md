@@ -25,8 +25,8 @@ arago-reveal-plugin/  plugin client reveal.js (stub Phase 0)
 ```
 
 `App.main()` délègue à `Vidocq.main()` qui découvre les extensions sur le module-path et démarre
-Chappe sur `:8080`. Les migrations Flyway s'appliquent au boot (`FlywayMigrator`), une fois le pool
-Mansart prêt.
+Chappe sur `:8080`. Les migrations Flyway s'appliquent au boot via l'extension Flyway de Vidocq
+(`migration`), avant le démarrage du conteneur CDI.
 
 ## Prérequis
 
@@ -59,34 +59,29 @@ Puis :
 - <http://localhost:8080/api/health> — santé MicroProfile (knock) → `{"status":"UP", …}`
 - <http://localhost:8080/api/rooms/count> — compteur de rooms (preuve REST + Mansart)
 
-Cette stack-là ne configure **pas** d'IdP : le bouton « Se connecter (Keycloak) » affiche un message
-« connexion non configurée » (pas de 500), et le superadmin n'a pas de credentials. Pour tester les
-deux consoles, utiliser la stack dev complète ci-dessous.
+Cette stack-là ne **seede aucun compte** : le superadmin n'a pas de credentials et aucun speaker n'est
+créé. La page <http://localhost:8080/speaker> affiche le formulaire de connexion, mais sans compte rien
+ne se connecte. Pour exercer les deux consoles, utiliser la stack dev complète ci-dessous.
 
-### Stack dev complète : Arago + PostgreSQL + Keycloak (`docker-compose.localdev.yml`)
+### Stack dev complète avec comptes seedés (`docker-compose.localdev.yml`)
 
-Ajoute un Keycloak 26 (realm `arago` pré-importé, 15 users `*@oidc.test` / mot de passe `pw`) **et**
-le compte superadmin break-glass, pour exercer les deux parcours authentifiés en local :
+Auth **100 % locale** (plus de Keycloak) : provisionne le compte superadmin break-glass **et** deux
+speakers (email + mot de passe) prêts à l'emploi.
 
 ```bash
 mvn -ntp install -DskipTests
 docker compose -f docker-compose.localdev.yml up --build
 ```
 
-- **Speaker** — <http://localhost:8080/> → « Se connecter (Keycloak) », puis login Keycloak
-  `speakera` ou `speakerb` / `pw`. Les deux sont auto-provisionnés dans l'allowlist au boot via
-  `ARAGO_DEV_SEED_SPEAKER` (`speakerA` en rôle ADMIN, `speakerB` en SPEAKER), donc le login aboutit
-  sans invitation manuelle. La liste accepte plusieurs emails séparés par des virgules, chacun en
-  `email` ou `email=ROLE`. Les autres users du realm (`ada`, `bob`, … `pw`) ne sont pas seedés —
-  parfaits pour tester le flux superadmin → inviter (`POST /api/admin/speakers`) → login.
-- **Superadmin** — <http://localhost:8080/admin> → `root` / `arago-dev`.
-- Console Keycloak admin — <http://localhost:8081/> (`admin` / `admin`).
-
-Le navigateur joint Keycloak en `localhost:8081`, alors qu'Arago le joint en `keycloak:8080` sur le
-réseau Docker : `KeycloakOidcClient` gère ce split via `ARAGO_OIDC_INTERNAL_ISSUER` (échange de code
-back-channel + JWKS), `ARAGO_OIDC_ISSUER` restant l'issuer public (le `iss` du token). C'est le
-scénario classique « Keycloak derrière un reverse-proxy ». **Réservé au dev** : secrets de
-démonstration, realm en `redirectUris: ["*"]`, Keycloak en HTTP, speaker seedé.
+- **Speaker** — <http://localhost:8080/speaker> → login `speakera@oidc.test` ou `speakerb@oidc.test`,
+  mot de passe `pw`. Les deux sont seedés dans l'allowlist au boot via `ARAGO_DEV_SEED_SPEAKER`
+  (`speakerA` en rôle ADMIN, `speakerB` en SPEAKER) avec le mot de passe `ARAGO_DEV_SEED_SPEAKER_PASSWORD`
+  (`pw`). La liste accepte plusieurs emails séparés par des virgules, chacun en `email` ou `email=ROLE`.
+- **Superadmin** — <http://localhost:8080/admin> → `root` / `arago-dev`. C'est lui qui crée/modifie les
+  speakers (`POST /api/admin/speakers`, avec email + rôle + mot de passe initial) et réinitialise les
+  mots de passe.
+- PostgreSQL est exposé sur le port hôte **`65123`** (parité avec `vidocq:dev`) pour s'y connecter avec un
+  outil DB. **Réservé au dev** : secrets de démonstration, speakers seedés, DB exposée sur l'hôte.
 
 ### Dev depuis IntelliJ IDEA
 
@@ -94,13 +89,13 @@ Le dépôt versionne deux configurations de lancement dans `.run/` : IntelliJ le
 automatiquement à l'ouverture du projet (menu déroulant des Run/Debug Configurations).
 
 **Prérequis** : SDK de projet sur **JDK 25** (`File → Project Structure → Project SDK`) et
-**Docker** démarré (le mode dev provisionne PostgreSQL + Keycloak via les DevServices Vidocq).
+**Docker** démarré (le mode dev provisionne PostgreSQL via les DevServices Vidocq).
 
 1. **`Arago Dev (vidocq:dev)`** — config Maven qui lance le goal `vidocq:dev` sur
-   `arago-server/pom.xml`. Elle démarre l'app, provisionne PostgreSQL + Keycloak (realm `arago`
-   pré-importé), injecte les secrets de dev (superadmin `root` / `arago-dev`) et fork la JVM avec
-   un agent JDWP en écoute sur **`:5005`**. Lancer cette config (▶) suffit pour avoir l'appli sur
-   <http://localhost:8080/>.
+   `arago-server/pom.xml`. Elle démarre l'app, provisionne PostgreSQL (sur le port hôte **fixe `65123`**),
+   injecte les secrets de dev (superadmin `root` / `arago-dev`), seede `speakerA`/`speakerB` (mot de passe
+   `pw`), et fork la JVM avec un agent JDWP en écoute sur **`:5005`**. Lancer cette config (▶) suffit pour
+   avoir l'appli sur <http://localhost:8080/>.
 
 2. **`Attach Arago :5005`** — config *Remote JVM Debug* qui s'attache au process forké sur
    `localhost:5005`. La lancer en mode Debug (🐞) une fois que `Arago Dev` tourne permet de poser
@@ -112,32 +107,30 @@ automatiquement à l'ouverture du projet (menu déroulant des Run/Debug Configur
 > du projet, pom = `arago-server/pom.xml`) + une *Remote JVM Debug* `localhost:5005` (attach,
 > socket transport).
 
+**Base de données dans IntelliJ** : le dépôt versionne aussi `.idea/dataSources.xml` (datasource
+« Arago Dev (65123) » → `jdbc:postgresql://localhost:65123/vidocq`, user/mot de passe `vidocq`). Comme
+le port DB est fixe, la connexion fonctionne dès que `vidocq:dev` tourne — elle apparaît directement
+dans la fenêtre *Database* d'IntelliJ, sans configuration manuelle.
+
 #### Comptes de dev
 
-Le realm Keycloak `arago` (importé depuis `docker/keycloak/arago-realm.json` au démarrage du
-DevService) provisionne ces comptes. **Tous les users Keycloak ont le mot de passe `pw`.** Identique
-en `vidocq:dev` (IntelliJ) et via `docker-compose.localdev.yml`.
+Auth locale (email + mot de passe). Seuls `speakerA`/`speakerB` sont seedés au boot ; tout autre speaker
+est créé par le superadmin. Identique en `vidocq:dev` (IntelliJ) et via `docker-compose.localdev.yml`.
 
-| Rôle dans Arago | Login Keycloak | Mot de passe | Allowlist au boot |
+| Rôle dans Arago | Login (email) | Mot de passe | Seedé au boot |
 |---|---|---|---|
-| **Speaker — ADMIN** | `speakera` | `pw` | ✅ seedé `ADMIN` |
-| **Speaker — SPEAKER** | `speakerb` | `pw` | ✅ seedé `SPEAKER` |
-| Users génériques (16) | `ada`, `bob`, `carol`, `dave`, `erin`, `grace`, `heidi`, `ivan`, `judy`, `karl`, `leo`, `mona`, `nina`, `owen`, `rita`, `sam` | `pw` | ❌ non seedés |
-| **Superadmin** (break-glass) | `root` | `arago-dev` | n/a (console `/admin`, hors Keycloak) |
+| **Speaker — ADMIN** | `speakera@oidc.test` | `pw` | ✅ rôle `ADMIN` |
+| **Speaker — SPEAKER** | `speakerb@oidc.test` | `pw` | ✅ rôle `SPEAKER` |
+| **Superadmin** (break-glass) | `root` | `arago-dev` | console `/admin` |
 
-- Emails Keycloak : `<login>@oidc.test` (ex. `speakera@oidc.test`).
-- **`speakera` / `speakerb`** sont auto-ajoutés à l'allowlist au boot (`arago.dev.seed-speaker`,
-  câblé dans la config du plugin `vidocq:dev`), donc leur login OIDC aboutit **sans invitation
-  manuelle**. `speakerA` est `ADMIN`, `speakerB` est `SPEAKER`.
-- Les **16 users génériques** existent dans Keycloak mais ne sont **pas** dans l'allowlist : leur
-  login renvoie « Compte non provisionné ». Parfaits pour tester le flux superadmin → inviter
-  (`POST /api/admin/speakers`, console `/admin` en `root` / `arago-dev`) → login.
-- Console admin Keycloak : <http://localhost:8081/> (`admin` / `admin`) **uniquement** avec
-  `docker-compose.localdev.yml` ; en `vidocq:dev`, le port Keycloak est aléatoire (voir
-  `target/vidocq-dev-services.properties` ou les logs `Keycloak dev service ready, issuer …`).
+- Le seed est piloté par `arago.dev.seed-speaker` (emails + rôle) et `arago.dev.seed-speaker.password`
+  (mot de passe initial, défaut `pw`), câblés dans la config du plugin `vidocq:dev`.
+- **Créer d'autres speakers** : superadmin → console `/admin` → « Créer » (email + rôle + mot de passe),
+  puis le speaker se connecte sur `/speaker`. Le superadmin peut aussi réinitialiser un mot de passe.
+- Un login d'un email non provisionné renvoie « Identifiants invalides ».
 
-> **Réservé au dev** : secrets de démonstration, realm en `redirectUris: ["*"]`, Keycloak en HTTP,
-> speakers seedés. Jamais en production (`arago.dev.seed-speaker` doit rester absent).
+> **Réservé au dev** : secrets de démonstration et speakers seedés. Jamais en production
+> (`arago.dev.seed-speaker` doit rester absent).
 
 ### Dev front avec hot-reload
 
@@ -154,8 +147,8 @@ managé séparément ; credentials injectés par env (`VIDOCQ_POOL_URL/USERNAME/
 
 ## Roadmap
 
-Phase 0 (ce squelette) ✅ — puis Phases 1–6 (OIDC/room/chat/WebSocket, RGPD, pins, mode LAB, reveal,
-historique, polish) ; cf. `arago-spec.md` §11. Bugs & points ouverts : `BUG.md`. Benchmarks : `BENCH.md`.
+Phase 0 (ce squelette) ✅ — puis Phases 1–6 (auth locale/room/chat/WebSocket, RGPD, pins, mode LAB,
+reveal, historique, polish) ; cf. `arago-spec.md` §11. Bugs & points ouverts : `BUG.md`. Benchmarks : `BENCH.md`.
 
 ## Licence
 

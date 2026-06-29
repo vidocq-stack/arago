@@ -1,5 +1,6 @@
 package io.vidocq.tools.arago.server;
 
+import io.vidocq.tools.arago.auth.PasswordHasher;
 import io.vidocq.tools.arago.persistence.Role;
 import io.vidocq.tools.arago.persistence.Speaker;
 import io.vidocq.tools.arago.persistence.SpeakerRepository;
@@ -16,15 +17,15 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
- * Optional dev/demo convenience: provision a single speaker into the allowlist at startup so a Keycloak
- * login lands as a fully-authorized speaker with no manual {@code POST /api/admin/speakers} step. Driven
- * by {@code arago.dev.seed-speaker} (the email); unset (the prod default) makes this a no-op.
+ * Optional dev/demo convenience: provision speakers at startup so a local login lands as a
+ * fully-authorized speaker with no manual {@code POST /api/admin/speakers} step. Driven by
+ * {@code arago.dev.seed-speaker}; unset (the prod default) makes this a no-op.
  *
- * <p>Authentication still goes through Keycloak — this only short-circuits the <em>authorization</em>
- * side (the allowlist the superadmin would otherwise manage). It runs as its own
- * {@code @Observes @Initialized(ApplicationScoped.class)} observer; the schema (incl. the
- * {@code speakers} table) is already migrated by the Vidocq Flyway extension during {@code beforeStart}
- * — before the CDI container boots — so there is no race with the migration.</p>
+ * <p>Each seeded speaker gets an initial password ({@code arago.dev.seed-speaker.password}, default
+ * {@code pw}) hashed with {@link PasswordHasher}, so {@code POST /api/speaker/login} works immediately.
+ * It runs as its own {@code @Observes @Initialized(ApplicationScoped.class)} observer; the schema (incl.
+ * the {@code speakers} table) is already migrated by the Vidocq Flyway extension during
+ * {@code beforeStart} — before the CDI container boots — so there is no race with the migration.</p>
  *
  * <p>Config: {@code arago.dev.seed-speaker} — a comma-separated list of emails, each optionally carrying
  * its role as {@code email=ROLE} (e.g. {@code speakera@oidc.test=ADMIN,speakerb@oidc.test}). A bare email
@@ -39,6 +40,8 @@ public class DevSpeakerSeeder {
 
     @Inject
     SpeakerRepository speakers;
+
+    private final PasswordHasher hasher = new PasswordHasher();
 
     DevSpeakerSeeder() {
         // CDI
@@ -70,8 +73,10 @@ public class DevSpeakerSeeder {
                 .orElse(Role.SPEAKER);
         String defaultName = config.getOptionalValue("arago.dev.seed-speaker.name", String.class)
                 .filter(s -> !s.isBlank()).orElse(null);
+        String password = config.getOptionalValue("arago.dev.seed-speaker.password", String.class)
+                .filter(s -> !s.isBlank()).orElse("pw");
         for (SeedEntry entry : parseSeedSpec(raw, defaultRole, defaultName)) {
-            if (seedSpeaker(entry.email(), entry.role(), entry.displayName())) {
+            if (seedSpeaker(entry.email(), entry.role(), entry.displayName(), password)) {
                 LOG.warning(() -> "Dev seed: provisioned speaker " + entry.email()
                         + " (" + entry.role() + ") — DISABLE in production (arago.dev.seed-speaker)");
             }
@@ -119,16 +124,23 @@ public class DevSpeakerSeeder {
     }
 
     /**
-     * Provisions {@code email} (trimmed + lowercased, matching {@code SpeakerAllowlist}) as an enabled
-     * speaker if absent. Returns {@code true} when a row was created, {@code false} if it already existed.
+     * Provisions {@code email} (trimmed + lowercased) as an enabled speaker with an initial password if
+     * absent. Returns {@code true} when a row was created, {@code false} if it already existed.
      */
-    boolean seedSpeaker(String email, Role role, String displayName) {
+    boolean seedSpeaker(String email, Role role, String displayName, String password) {
         String key = email.trim().toLowerCase();
         if (speakers.findByEmail(key).isPresent()) {
             return false;
         }
-        speakers.save(new Speaker(
-                UUID.randomUUID().toString(), key, role, true, displayName, "dev-seed", Instant.now()));
+        Speaker speaker = new Speaker(
+                UUID.randomUUID().toString(), key, role, true, displayName, "dev-seed", Instant.now());
+        char[] buf = password.toCharArray();
+        try {
+            speaker.setPasswordHash(hasher.hash(buf));
+        } finally {
+            java.util.Arrays.fill(buf, '\0');
+        }
+        speakers.save(speaker);
         return true;
     }
 }

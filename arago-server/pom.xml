@@ -51,12 +51,6 @@
             <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
             <artifactId>vidocq-runtime-dirac-metrics-extension</artifactId>
         </dependency>
-        <!-- MicroProfile JWT (cervantes) : valide les Bearer RS256 émis par Keycloak (OIDC). -->
-        <dependency>
-            <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
-            <artifactId>vidocq-runtime-cervantes-jwt-extension</artifactId>
-        </dependency>
-
         <!-- Mansart pool + Jakarta Data + transactions -->
         <dependency>
             <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
@@ -237,37 +231,33 @@
                 <groupId>io.vidocq.runtime</groupId>
                 <artifactId>vidocq-runtime-maven-plugin</artifactId>
                 <version>${vidocq.runtime.version}</version>
-                <!-- Dev mode (vidocq:dev): provisions Postgres + Keycloak on local Docker and forks the
-                     app with a JDWP debug agent on :5005. These are build-tooling deps living on the
-                     plugin classpath only — never on the runtime module-path nor in the AOT image. -->
+                <!-- Dev mode (vidocq:dev): provisions a local Postgres on a FIXED host port and forks the
+                     app with a JDWP debug agent on :5005. Build-tooling dep on the plugin classpath only —
+                     never on the runtime module-path nor in the AOT image. (No Keycloak: auth is local.) -->
                 <dependencies>
                     <dependency>
                         <groupId>io.vidocq.runtime</groupId>
                         <artifactId>vidocq-runtime-devservice-postgres</artifactId>
                         <version>${vidocq.runtime.version}</version>
                     </dependency>
-                    <dependency>
-                        <groupId>io.vidocq.runtime</groupId>
-                        <artifactId>vidocq-runtime-devservice-keycloak</artifactId>
-                        <version>${vidocq.runtime.version}</version>
-                    </dependency>
                 </dependencies>
                 <configuration>
                     <!-- Applies to the CLI-invoked `vidocq:dev`; the `generate` execution ignores these
-                         unknown params. The runtime 0.2.0 mojo names this param `extraSystemProperties`
-                         (comma-separated key=value forwarded both to the DevService SPI and the child JVM
-                         as -Dkey=value); the pre-0.2.0 `systemProperties` name is now silently ignored.
-                         Keycloak realm import + app-key mappings + dev-only secrets (superadmin password
-                         is "arago-dev"). Datasource + issuer are injected live by the DevServices, so they
-                         are intentionally absent here. -->
-                    <extraSystemProperties>vidocq.dev.keycloak.realm-import=../docker/keycloak/arago-realm.json,vidocq.dev.keycloak.realm=arago,vidocq.dev.keycloak.issuer-keys=arago.oidc.issuer,vidocq.dev.keycloak.public-url-key=arago.public.url,arago.oidc.web-client-id=arago-web,arago.superadmin.username=root,arago.superadmin.password-hash=$pbkdf2-sha256$i=600000$R8Y2xZt2A1l+AW/lPOmJVQ$F10mN4idJcNvNk+G7UGdD3oxdunzBGq9jy7XXn4OCtU,arago.attendee.hmac-secret=0123456789abcdef0123456789abcdef,arago.mail.dev-expose-link=true,arago.pins.preview.allow-private=true</extraSystemProperties>
-                    <!-- Speaker allowlist seeding (matches ARAGO_DEV_SEED_SPEAKER in docker-compose.localdev):
-                         speakerA → ADMIN, speakerB → SPEAKER, auto-provisioned at boot so the OIDC login
-                         succeeds without a manual invite. The value carries a comma to separate the two
-                         entries, so it CANNOT live in extraSystemProperties (the mojo splits that param on
-                         ',' with no escaping). extraJvmArgs is split on whitespace only and forwarded
-                         verbatim to the child JVM as a -D system property — the right channel here. -->
-                    <extraJvmArgs>-Darago.dev.seed-speaker=speakera@oidc.test=ADMIN,speakerb@oidc.test=SPEAKER</extraJvmArgs>
+                         unknown params. The 0.2.0 mojo names this param `extraSystemProperties` (comma-
+                         separated key=value, forwarded both to the DevService SPI and the child JVM as
+                         -Dkey=value). Dev-only secrets (superadmin password is "arago-dev"); the datasource
+                         is injected live by the Postgres DevService. `vidocq.dev.postgres.port` binds the
+                         default dev DB to a FIXED host port (65123) so a committed IntelliJ datasource can
+                         point at it. (For the DEFAULT datasource the key has no name segment; a named
+                         datasource would use `vidocq.dev.postgres.<name>.port`.) -->
+                    <extraSystemProperties>vidocq.dev.postgres.port=65123,arago.superadmin.username=root,arago.superadmin.password-hash=$pbkdf2-sha256$i=600000$R8Y2xZt2A1l+AW/lPOmJVQ$F10mN4idJcNvNk+G7UGdD3oxdunzBGq9jy7XXn4OCtU,arago.attendee.hmac-secret=0123456789abcdef0123456789abcdef,arago.mail.dev-expose-link=true,arago.pins.preview.allow-private=true</extraSystemProperties>
+                    <!-- Speaker seeding (local auth): speakerA → ADMIN, speakerB → SPEAKER, auto-provisioned
+                         at boot with the initial password `pw` (arago.dev.seed-speaker.password) so the
+                         local login works without a manual invite. The value carries a comma to separate the
+                         two entries, so it CANNOT live in extraSystemProperties (the mojo splits that param on
+                         ',' with no escaping). extraJvmArgs is split on whitespace only and forwarded verbatim
+                         to the child JVM as -D system properties — the right channel here. -->
+                    <extraJvmArgs>-Darago.dev.seed-speaker=speakera@oidc.test=ADMIN,speakerb@oidc.test=SPEAKER -Darago.dev.seed-speaker.password=pw</extraJvmArgs>
                 </configuration>
                 <executions>
                     <execution>

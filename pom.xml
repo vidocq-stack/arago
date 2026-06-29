@@ -141,11 +141,6 @@
                 <version>${vidocq.runtime.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.vidocq.runtime.extensions.microprofile</groupId>
-                <artifactId>vidocq-runtime-cervantes-jwt-extension</artifactId>
-                <version>${vidocq.runtime.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>io.vidocq.runtime.extensions.jakartaee.web</groupId>
                 <artifactId>vidocq-runtime-mansart-pool-extension</artifactId>
                 <version>${vidocq.runtime.version}</version>

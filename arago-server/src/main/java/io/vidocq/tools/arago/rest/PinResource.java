@@ -1,10 +1,11 @@
 package io.vidocq.tools.arago.rest;
 
-import io.vidocq.tools.arago.oidc.SpeakerAllowlist;
 import io.vidocq.tools.arago.persistence.Pin;
 import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomRepository;
+import io.vidocq.tools.arago.persistence.Speaker;
+import io.vidocq.tools.arago.speaker.SpeakerAuthenticator;
 import io.vidocq.tools.arago.ws.RoomSocket;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -13,26 +14,23 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.SecurityContext;
-import org.eclipse.microprofile.jwt.JsonWebToken;
-
-import java.security.Principal;
 
 /**
  * Unpin a content block (cf. arago-spec §4.4): {@code DELETE /api/pins/{pinId}}. Owner-only — the
- * pin's room must be owned by the authenticated, allowlisted speaker. On success the removal is
- * broadcast to the room's WebSocket peers ({@code {"type":"pin","action":"remove",…}}).
+ * pin's room must be owned by the authenticated, enabled speaker. On success the removal is broadcast
+ * to the room's WebSocket peers ({@code {"type":"pin","action":"remove",…}}).
  *
  * <p>Separate from {@code RoomResource} because the delete path is rooted at {@code /pins}, not
- * {@code /rooms}. {@code @RequestScoped} for {@code @Context SecurityContext}.</p>
+ * {@code /rooms}. {@code @RequestScoped} for {@code @Context HttpHeaders} (the bearer token).</p>
  */
 @RequestScoped
 @Path("/pins")
 public class PinResource {
 
     @Context
-    SecurityContext securityContext;
+    HttpHeaders httpHeaders;
 
     @Inject
     PinRepository pinRepo;
@@ -41,7 +39,7 @@ public class PinResource {
     RoomRepository rooms;
 
     @Inject
-    SpeakerAllowlist allowlist;
+    SpeakerAuthenticator speakerAuth;
 
     @Inject
     RoomSocket roomSocket;
@@ -64,23 +62,8 @@ public class PinResource {
     }
 
     private String requireProvisionedSpeaker() {
-        Principal principal = securityContext == null ? null : securityContext.getUserPrincipal();
-        if (!(principal instanceof JsonWebToken jwt)) {
-            throw new WebApplicationException(Response.Status.UNAUTHORIZED);
-        }
-        if (allowlist.authorize(emailClaim(jwt), jwt.getSubject()).isEmpty()) {
-            throw new WebApplicationException(Response.Status.FORBIDDEN);
-        }
-        return jwt.getSubject();
-    }
-
-    private static String emailClaim(JsonWebToken token) {
-        Object raw = token.getClaim("email");
-        return switch (raw) {
-            case null -> null;
-            case String s -> s;
-            case jakarta.json.JsonString js -> js.getString();
-            default -> raw.toString();
-        };
+        return speakerAuth.authenticate(httpHeaders.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .map(Speaker::getId)
+                .orElseThrow(() -> new WebApplicationException(Response.Status.UNAUTHORIZED));
     }
 }

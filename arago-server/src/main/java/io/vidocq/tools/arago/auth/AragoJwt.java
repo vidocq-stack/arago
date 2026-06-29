@@ -18,8 +18,8 @@ import java.util.Map;
 
 /**
  * Minimal, hardened HS256 JWT issuer/verifier for tokens <em>signed by Arago itself</em>
- * (superadmin and attendee tokens — cf. arago-spec §4.2/§10). OIDC speaker tokens are RS256 and
- * validated by MicroProfile JWT (cervantes), not here.
+ * (superadmin, speaker and attendee tokens — cf. arago-spec §4.2/§10). All Arago auth is now local
+ * (no external OIDC), so every token is HS256 and verified here.
  *
  * <p><strong>Zero dependency</strong> — HMAC via {@link Mac} (JDK), JSON via Jakarta JSON-P
  * (champollion, already in the stack). Deliberate choice over a JWT library to honour the Vidocq
@@ -41,6 +41,8 @@ public final class AragoJwt {
     public static final String ISSUER = "arago";
     /** Audience for the superadmin token (cf. §4.2). */
     public static final String AUDIENCE_ADMIN = "arago-admin";
+    /** Audience for the local speaker token (cf. §4.2). */
+    public static final String AUDIENCE_SPEAKER = "arago-speaker";
     /** Audience for attendee tokens (cf. §4.2). */
     public static final String AUDIENCE_ATTENDEE = "arago-attendee";
     /** Audience for attendee RGPD magic-link tokens (cf. §4.7). */

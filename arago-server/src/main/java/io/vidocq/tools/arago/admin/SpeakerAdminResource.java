@@ -1,5 +1,6 @@
 package io.vidocq.tools.arago.admin;
 
+import io.vidocq.tools.arago.auth.PasswordHasher;
 import io.vidocq.tools.arago.persistence.Role;
 import io.vidocq.tools.arago.persistence.Speaker;
 import io.vidocq.tools.arago.persistence.SpeakerRepository;
@@ -40,6 +41,8 @@ public class SpeakerAdminResource {
     @Inject
     AdminAuditService audit;
 
+    private final PasswordHasher hasher = new PasswordHasher();
+
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response list(@HeaderParam("X-Arago-Admin") String authz) {
@@ -69,6 +72,9 @@ public class SpeakerAdminResource {
         Role role = request.role() == null ? Role.SPEAKER : request.role();
         Speaker speaker = new Speaker(UUID.randomUUID().toString(), email, role, true,
                 request.displayName(), "superadmin", Instant.now());
+        if (request.password() != null && !request.password().isBlank()) {
+            speaker.setPasswordHash(hash(request.password()));
+        }
         Speaker saved = speakers.save(speaker);
         audit.record("speaker.create", saved.getId(), forwardedFor);
         return Response.status(Response.Status.CREATED).entity(view(saved)).build();
@@ -94,6 +100,9 @@ public class SpeakerAdminResource {
                 }
                 if (request.displayName() != null) {
                     speaker.setDisplayName(request.displayName());
+                }
+                if (request.password() != null && !request.password().isBlank()) {
+                    speaker.setPasswordHash(hash(request.password()));
                 }
             }
             Response ok = Response.ok(view(speakers.save(speaker))).build();
@@ -122,8 +131,18 @@ public class SpeakerAdminResource {
         return Response.status(Response.Status.UNAUTHORIZED).header(HttpHeaders.WWW_AUTHENTICATE, "Bearer").build();
     }
 
+    /** Hashes a clear-text password into a PBKDF2 PHC string, clearing the buffer afterwards. */
+    private String hash(String password) {
+        char[] buf = password.toCharArray();
+        try {
+            return hasher.hash(buf);
+        } finally {
+            java.util.Arrays.fill(buf, '\0');
+        }
+    }
+
     private static SpeakerView view(Speaker s) {
         return new SpeakerView(s.getId(), s.getEmail(), s.getRole(), s.isEnabled(),
-                s.getDisplayName(), s.getOidcSub());
+                s.getDisplayName(), s.getPseudo(), s.getPasswordHash() != null);
     }
 }

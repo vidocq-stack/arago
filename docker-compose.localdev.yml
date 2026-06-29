@@ -1,22 +1,18 @@
-# Full local dev / demo stack: Arago + PostgreSQL 16 + Keycloak 26 (OIDC).
+# Full local dev / demo stack: Arago + PostgreSQL 16, with the superadmin account AND seeded speakers
+# (local email + password auth — no external identity provider).
 #
 #   docker compose -f docker-compose.localdev.yml up --build
 #
-# Unlike the prod-like docker-compose.yml (Arago + Postgres only), this wires a real identity
-# provider AND the superadmin break-glass account, so you can exercise BOTH consoles locally:
+# Unlike the prod-like docker-compose.yml (Arago + Postgres, no seeded accounts), this pre-provisions
+# both consoles so you can exercise them immediately:
 #
-#   • Superadmin  — http://localhost:8080/admin   (login: root / arago-dev — see hash below).
-#                   Carried on X-Arago-Admin, no Keycloak needed.
-#   • Speaker     — http://localhost:8080/         → "Sign in (Keycloak)".
-#                   Log in to Keycloak as ada / pw (realm user, pre-provisioned into the allowlist
-#                   by ARAGO_DEV_SEED_SPEAKER below — zero manual invite step).
+#   • Superadmin — http://localhost:8080/admin     (login: root / arago-dev — see hash below).
+#                  Carried on the X-Arago-Admin header.
+#   • Speaker    — http://localhost:8080/speaker    (login: speakera@oidc.test or speakerb@oidc.test,
+#                  password "pw"). Seeded into the allowlist at boot (ARAGO_DEV_SEED_SPEAKER) with an
+#                  initial password (ARAGO_DEV_SEED_SPEAKER_PASSWORD) — zero manual invite step.
 #
-# Front-channel vs back-channel: the browser reaches Keycloak at localhost:8081, while Arago reaches
-# it at keycloak:8080 on the Docker network. KeycloakOidcClient honours that split via
-# ARAGO_OIDC_INTERNAL_ISSUER (back-channel token exchange + JWKS), keeping ARAGO_OIDC_ISSUER as the
-# public, browser-facing issuer that also matches MP_JWT_VERIFY_ISSUER (the token's `iss`).
-#
-# NOT for production: dev secrets, a wildcard-redirect realm, http-only Keycloak, and a seeded speaker.
+# NOT for production: dev secrets, seeded speakers, a database port exposed on the host.
 services:
   postgres:
     image: postgres:16-alpine
@@ -25,6 +21,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-arago}
       POSTGRES_USER: ${POSTGRES_USER:-arago}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arago}
+    # Exposed on a fixed host port for parity with `vidocq:dev` (which binds 65123) — connect a DB tool
+    # to localhost:65123. The in-network host for Arago stays postgres:5432 (see arago env below).
+    ports:
+      - "65123:5432"
     volumes:
       - arago-localdev-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,66 +33,33 @@ services:
       timeout: 5s
       retries: 10
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    container_name: arago-localdev-keycloak
-    command: ["start-dev", "--import-realm"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      # Frontend URL → token `iss` and browser-facing endpoints. The host-mapped port (8081) is what
-      # the browser uses; Arago reaches this container at keycloak:8080 instead (see arago env below).
-      KC_HOSTNAME: http://localhost:8081
-      KC_HTTP_ENABLED: "true"
-    volumes:
-      - ./docker/keycloak/arago-realm.json:/opt/keycloak/data/import/arago-realm.json:ro
-    ports:
-      - "8081:8080"
-
   arago:
     build: .
     image: registry.vidocq.dev/vidocq-tools/arago:0.1.0-SNAPSHOT
     container_name: arago-localdev
-    # Boot may race Keycloak's ~40s start-dev; restart until JWKS is reachable on first login.
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-      keycloak:
-        condition: service_started
     environment:
       # MP Config env mapping: vidocq.pool.* <- VIDOCQ_POOL_*
       VIDOCQ_POOL_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-arago}
       VIDOCQ_POOL_USERNAME: ${POSTGRES_USER:-arago}
       VIDOCQ_POOL_PASSWORD: ${POSTGRES_PASSWORD:-arago}
 
-      # OIDC — cervantes/MP-JWT validates the Keycloak Bearer against this public issuer + its JWKS.
-      # The JWKS is fetched back-channel, so it points at the in-network host (keycloak:8080); the
-      # issuer it checks stays the public frontend URL (the token's `iss`).
-      MP_JWT_VERIFY_ISSUER: http://localhost:8081/realms/arago
-      MP_JWT_VERIFY_PUBLICKEY_LOCATION: http://keycloak:8080/realms/arago/protocol/openid-connect/certs
-
-      # OIDC front-channel (Authorization Code + PKCE). ARAGO_OIDC_ISSUER builds the browser redirect to
-      # Keycloak (localhost:8081); ARAGO_OIDC_INTERNAL_ISSUER builds the server→server token exchange
-      # (keycloak:8080). ARAGO_PUBLIC_URL is the base for redirect_uri = {public}/api/oidc/callback.
-      ARAGO_OIDC_ISSUER: http://localhost:8081/realms/arago
-      ARAGO_OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/arago
-      ARAGO_OIDC_WEB_CLIENT_ID: arago-web
-      ARAGO_PUBLIC_URL: http://localhost:8080
-
       # Superadmin break-glass account (spec §4.8). Password "arago-dev"; regenerate the hash with
       #   echo -n '<pwd>' | java -m io.vidocq.tools.arago.server/io.vidocq.tools.arago.cli.HashPasswordCli
       # The PBKDF2 hash's '$' are doubled ('$$') so Compose does not treat them as variables.
       ARAGO_SUPERADMIN_USERNAME: root
       ARAGO_SUPERADMIN_PASSWORD_HASH: "$$pbkdf2-sha256$$i=600000$$KdTP9feTdyesm19Cnf9vMA$$gfP0bnjcnwSqTNcPSyCUfSVIJ6iIirq9XkhB/3hUG2s"
-      # Signs attendee/profile/superadmin HS256 tokens. Dev-only — rotate in prod.
+      # Signs speaker/attendee/profile/superadmin HS256 tokens. Dev-only — rotate in prod.
       ARAGO_ATTENDEE_HMAC_SECRET: arago-localdev-only-hmac-secret-change-me
 
-      # Dev convenience: provision speakers into the allowlist at boot so a Keycloak login lands as a
-      # speaker with no manual invite. Comma-separated list, each "email" or "email=ROLE". OFF in prod
-      # (key simply unset). Here: speakerA as ADMIN (moderates, sees all rooms) + speakerB as SPEAKER —
-      # both log in to Keycloak with password "pw" (realm users speakera / speakerb).
+      # Dev convenience: provision speakers into the allowlist at boot (local auth), each with the initial
+      # password below, so a local login works with no manual invite. Comma-separated "email" or
+      # "email=ROLE". OFF in prod (keys unset). Here: speakerA as ADMIN + speakerB as SPEAKER, password "pw".
       ARAGO_DEV_SEED_SPEAKER: speakera@oidc.test=ADMIN,speakerb@oidc.test=SPEAKER
+      ARAGO_DEV_SEED_SPEAKER_PASSWORD: pw
 
       # RGPD §4.7: no SMTP locally — expose the magic link in the POST /api/profile/magic-link response.
       ARAGO_MAIL_DEV_EXPOSE_LINK: "true"

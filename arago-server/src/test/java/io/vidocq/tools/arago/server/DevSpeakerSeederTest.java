@@ -19,9 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The dev/demo seed provisions a single speaker into the allowlist so a Keycloak login lands as a
- * speaker with zero manual steps. It must be idempotent (a restart re-seeds nothing) and must normalise
- * the email to the same lowercase key {@link io.vidocq.tools.arago.oidc.SpeakerAllowlist} matches on.
+ * The dev/demo seed provisions speakers (with an initial password) so a local login lands as a speaker
+ * with zero manual steps. It must be idempotent (a restart re-seeds nothing) and must normalise the
+ * email to a lowercase key.
  */
 class DevSpeakerSeederTest {
 
@@ -30,7 +30,7 @@ class DevSpeakerSeederTest {
         var repo = new FakeSpeakerRepository();
         var seeder = new DevSpeakerSeeder(repo);
 
-        boolean created = seeder.seedSpeaker(" Ada@OIDC.test ", Role.SPEAKER, "Ada Lovelace");
+        boolean created = seeder.seedSpeaker(" Ada@OIDC.test ", Role.SPEAKER, "Ada Lovelace", "pw");
 
         assertTrue(created);
         Speaker saved = repo.findByEmail("ada@oidc.test").orElseThrow();
@@ -39,15 +39,17 @@ class DevSpeakerSeederTest {
         assertTrue(saved.isEnabled());
         assertEquals("Ada Lovelace", saved.getDisplayName());
         assertEquals("dev-seed", saved.getInvitedBy());
+        assertTrue(saved.getPasswordHash() != null && saved.getPasswordHash().startsWith("$pbkdf2-sha256$"),
+                "an initial password hash must be set so the local login works");
     }
 
     @Test
     void isIdempotentWhenTheSpeakerAlreadyExists() {
         var repo = new FakeSpeakerRepository();
         var seeder = new DevSpeakerSeeder(repo);
-        seeder.seedSpeaker("ada@oidc.test", Role.SPEAKER, "Ada");
+        seeder.seedSpeaker("ada@oidc.test", Role.SPEAKER, "Ada", "pw");
 
-        boolean createdAgain = seeder.seedSpeaker("ADA@oidc.test", Role.ADMIN, "Ada again");
+        boolean createdAgain = seeder.seedSpeaker("ADA@oidc.test", Role.ADMIN, "Ada again", "pw");
 
         assertFalse(createdAgain, "a second seed of the same email must be a no-op");
         assertEquals(1, repo.count());
@@ -82,7 +84,7 @@ class DevSpeakerSeederTest {
         var seeder = new DevSpeakerSeeder(repo);
 
         for (var e : DevSpeakerSeeder.parseSeedSpec("a@x=ADMIN,b@x", Role.SPEAKER, null)) {
-            seeder.seedSpeaker(e.email(), e.role(), e.displayName());
+            seeder.seedSpeaker(e.email(), e.role(), e.displayName(), "pw");
         }
 
         assertEquals(2, repo.count());
@@ -115,7 +117,6 @@ class DevSpeakerSeederTest {
             return byEmail.size();
         }
 
-        @Override public Optional<Speaker> findByOidcSub(String oidcSub) { throw new UnsupportedOperationException(); }
         @Override public <S extends Speaker> List<S> saveAll(List<S> entities) { throw new UnsupportedOperationException(); }
         @Override public Optional<Speaker> findById(String id) { throw new UnsupportedOperationException(); }
         @Override public Stream<Speaker> findAll() { throw new UnsupportedOperationException(); }

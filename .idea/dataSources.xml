@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <!--
+      Dev database for `vidocq:dev` (cf. README "Dev depuis IntelliJ"). The Postgres DevService binds a
+      FIXED host port 65123 (pom: vidocq.dev.postgres.default.port), so this committed datasource works
+      out of the box once the app is running. DEV ONLY: the password (vidocq) is a throwaway dev secret
+      carried in the JDBC URL so there is nothing to type — never reuse this pattern for prod credentials.
+    -->
+    <data-source source="LOCAL" name="Arago Dev (65123)" uuid="a4a90000-0000-4000-8000-000065123db0">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://localhost:65123/vidocq?user=vidocq&amp;password=vidocq</jdbc-url>
+      <user-name>vidocq</user-name>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+  </component>
+</project>

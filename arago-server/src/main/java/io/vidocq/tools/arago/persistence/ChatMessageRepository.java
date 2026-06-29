@@ -30,4 +30,11 @@ public interface ChatMessageRepository extends BasicRepository<ChatMessage, Stri
     List<ChatMessage> findByPersistentFalseAndPurgeAfterLessThan(Instant cutoff);
 
     List<ChatMessage> findByProfileId(String profileId);
+
+    /**
+     * Every speaker-authored message carrying {@code authorPseudo}. Used to rewrite the denormalised
+     * author name when a speaker changes pseudo (§17.3) — reliable because speaker pseudos are globally
+     * unique, so the old pseudo identifies exactly that speaker's messages across all rooms.
+     */
+    List<ChatMessage> findByAuthorPseudoAndFromSpeakerTrue(String authorPseudo);
 }

@@ -8,8 +8,7 @@
 module io.vidocq.tools.arago.server {
     requires java.logging;
     requires java.sql;
-    // OIDC front-channel (io.vidocq.tools.arago.oidc): KeycloakOidcClient uses the JDK HttpClient
-    // to exchange the authorization code for a token at Keycloak's token endpoint.
+    // JDK HttpClient — used by the pins OpenGraph preview fetcher (io.vidocq.tools.arago.pins).
     requires java.net.http;
     // APT-generated repository impl / CDI proxies importent @Generated (SOURCE-retention).
     requires static java.compiler;
@@ -37,9 +36,6 @@ module io.vidocq.tools.arago.server {
     // MP Config API — @ConfigProperty injection of superadmin/attendee settings (resolved by ravel).
     requires org.eclipse.microprofile.config;
     requires io.vidocq.runtime.extensions.microprofile.knock;
-    // MicroProfile JWT (cervantes) — validate Keycloak Bearer tokens; inject JsonWebToken in resources.
-    requires io.vidocq.runtime.extensions.microprofile.cervantes;
-    requires org.eclipse.microprofile.jwt;
     // MicroProfile Metrics (dirac) — @Gauge for the active-rooms metric exposed at /metrics (§12).
     requires microprofile.metrics.api;
 
@@ -61,7 +57,7 @@ module io.vidocq.tools.arago.server {
     opens io.vidocq.tools.arago.ws;
     opens io.vidocq.tools.arago.metrics;
     opens io.vidocq.tools.arago.admin;
-    opens io.vidocq.tools.arago.oidc;
+    opens io.vidocq.tools.arago.speaker;
     opens io.vidocq.tools.arago.profile;
     opens io.vidocq.tools.arago.mail;
     opens io.vidocq.tools.arago.pins;

@@ -11,11 +11,10 @@ import java.util.Optional;
  * Verifies the superadmin token on protected admin endpoints (cf. arago-spec §4.8/§10.2). The token is
  * the HS256 token minted by {@code AdminLoginResource} ({@code aud=arago-admin}, {@code role=superadmin}).
  *
- * <p><strong>Carried on the {@code X-Arago-Admin} header, NOT {@code Authorization: Bearer}.</strong> When
- * OIDC is enabled, cervantes/MP-JWT owns the {@code Authorization: Bearer} scheme and rejects (401) any
- * Bearer it cannot verify against its issuer — which would kill the superadmin's local HS256 token. Keeping
- * the superadmin token on a distinct header lets both auth authorities coexist (cervantes stays strict /
- * TCK-compliant; the superadmin Bearer is simply invisible to it). See arago/BUG.md ARAGO-004.</p>
+ * <p><strong>Carried on the {@code X-Arago-Admin} header, NOT {@code Authorization: Bearer}.</strong> The
+ * speaker token (also HS256, but {@code aud=arago-speaker}) rides {@code Authorization: Bearer}; keeping the
+ * superadmin token on a distinct header cleanly separates the two authorities (admin vs speaker) and avoids
+ * any ambiguity about which token a request carries.</p>
  *
  * <p>Reads the signing secret via {@link ConfigProvider} (same key as the issuer). Returns an empty
  * {@link Optional} on any failure (the resource then returns {@code 401}); it does not throw.</p>

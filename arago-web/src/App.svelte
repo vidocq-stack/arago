@@ -22,53 +22,8 @@
   const pinDigits = $derived(pin.replace(/\D/g, '').slice(0, 6));
   const canJoin = $derived(pinDigits.length === 6 && pseudo.trim().length > 0);
 
-  // --- speaker OIDC (front-channel, arago-spec §7/§8) ---
-  // The speaker logs in through Keycloak (Authorization Code + PKCE, server-driven). The callback
-  // hands back a one-time ticket cookie; we exchange it once for the Keycloak access token, kept in
-  // memory and sent as Authorization: Bearer (cervantes validates it). The token never rides a URL.
-  let speaker = $state(null);        // { email, role } once logged in
-  let speakerToken = $state(null);   // Keycloak access token (in-memory only)
-  let oidcError = $state('');
-
-  // OIDC callback error codes mapped to translation keys (resolved at render time so a late
-  // language switch still re-labels the message).
-  const OIDC_ERROR_KEYS = {
-    speaker_not_provisioned: 'oidc.speaker_not_provisioned',
-    invalid_state: 'oidc.invalid_state',
-    exchange_failed: 'oidc.exchange_failed',
-    oidc_not_configured: 'oidc.not_configured',
-  };
-
-  function loginAsSpeaker() {
-    // Speakers belong on the speaker console, not back on the attendee/join page: land there after the
-    // Keycloak round-trip (Speaker.svelte then exchanges the one-time ticket and shows the console).
-    window.location.assign('/api/oidc/login?return=/speaker');
-  }
-
-  async function completeOidcLogin() {
-    const params = new URLSearchParams(window.location.search);
-    const loggedIn = params.get('login') === 'ok';
-    const err = params.get('oidc_error');
-    if (!loggedIn && !err) return;
-    // Strip the OIDC query params so a refresh doesn't replay them.
-    window.history.replaceState({}, '', window.location.pathname);
-    if (err) {
-      oidcError = OIDC_ERROR_KEYS[err] || 'oidc.generic';
-      return;
-    }
-    try {
-      const res = await fetch('/api/oidc/token', { method: 'POST' });
-      if (!res.ok) { oidcError = 'oidc.generic'; return; }
-      const session = await res.json();
-      speakerToken = session.accessToken;
-      // Prove the token is accepted end-to-end (and resolve the identity) via /api/oidc/me.
-      const me = await fetch('/api/oidc/me', { headers: { Authorization: `Bearer ${speakerToken}` } });
-      if (!me.ok) { oidcError = 'oidc.generic'; return; }
-      speaker = await me.json();
-    } catch {
-      oidcError = 'oidc.generic';
-    }
-  }
+  // The speaker console lives at its own page (/speaker) with a local email+password login; the
+  // attendee landing only links there (no speaker auth state here anymore).
 
   // --- attendee session persistence: survive a page refresh without leaving the room. ---
   const SESSION_KEY = 'arago.attendee';
@@ -102,7 +57,7 @@
   }
 
   onMount(() => {
-    if (!restoreSession()) completeOidcLogin();
+    restoreSession();
   });
 
   // --- room state ---
@@ -176,6 +131,17 @@
     ws = socket;
   }
 
+  /** Manual data refresh (SPA): reconnect the room socket so the server replays fresh state, without
+      reloading the page. Detach the old socket first so its onclose doesn't bounce us to the join screen. */
+  function refreshRoom() {
+    if (!token || view !== 'room') return;
+    const old = ws;
+    ws = null;
+    if (old) { try { old.close(); } catch { /* ignore */ } }
+    seats = {}; chat = []; pins = [];
+    connect();
+  }
+
   function onFrame(raw) {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
@@ -196,9 +162,10 @@
     const next = {};
     for (const [k, v] of Object.entries(seats)) next[k] = v === m.old ? m.new : v;
     seats = next;
-    // relabel their chat messages (past + the "mine" flag)
-    chat = chat.map((c) => (!c.fromSpeaker && c.author === m.old)
-      ? { ...c, author: m.new, mine: m.new === myPseudo } : c);
+    // relabel chat messages from that handle — attendee OR speaker (§17.1/§17.3); keep the "mine"
+    // flag for our own (attendee) messages only.
+    chat = chat.map((c) => (c.author === m.old)
+      ? { ...c, author: m.new, mine: !c.fromSpeaker && m.new === myPseudo } : c);
   }
 
   function startRename() {
@@ -428,17 +395,8 @@
     </form>
 
     <div class="speaker-box" data-testid="speaker-box">
-      {#if speaker}
-        <p class="speaker-id" data-testid="speaker-identity">
-          {t('speaker.connected', { email: speaker.email, role: speaker.role })}
-        </p>
-      {:else}
-        <p class="hint">{t('speaker.are-you')}</p>
-        <button type="button" class="ghost" data-testid="speaker-login" onclick={loginAsSpeaker}>
-          {t('speaker.login')}
-        </button>
-        {#if oidcError}<p class="error" data-testid="oidc-error">{t(oidcError)}</p>{/if}
-      {/if}
+      <p class="hint">{t('speaker.are-you')}</p>
+      <a class="ghost" data-testid="speaker-login" href="/speaker">{t('speaker.login')}</a>
     </div>
   {:else}
     <section class="room" data-testid="room">
@@ -467,6 +425,8 @@
         {:else if geom}
           <span class="seatlbl" data-testid="my-seat-label">{t('room.pick-seat')}</span>
         {/if}
+        <button type="button" class="rename-btn" data-testid="room-refresh"
+                aria-label={t('room.refresh')} title={t('room.refresh')} onclick={refreshRoom}>↻</button>
       </div>
 
       {#if notice}<p class="notice" data-testid="notice">{t(notice)}</p>{/if}
@@ -643,6 +603,11 @@
     text-align: center; padding-top: 0.5rem;
   }
   .speaker-id { margin: 0; font-weight: 700; color: var(--arago-bordeaux); }
+  /* The "speaker console" entry is a link styled as a button. */
+  .speaker-box a.ghost {
+    display: inline-block; padding: 0.4rem 0.9rem; border-radius: 6px;
+    text-decoration: none; font: inherit; cursor: pointer;
+  }
 
   .room { display: flex; flex-direction: column; gap: 0.9rem; align-items: stretch; }
   .bar { width: 100%; display: flex; justify-content: space-between; align-items: center; }
