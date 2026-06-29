@@ -88,6 +88,57 @@ back-channel + JWKS), `ARAGO_OIDC_ISSUER` restant l'issuer public (le `iss` du t
 scénario classique « Keycloak derrière un reverse-proxy ». **Réservé au dev** : secrets de
 démonstration, realm en `redirectUris: ["*"]`, Keycloak en HTTP, speaker seedé.
 
+### Dev depuis IntelliJ IDEA
+
+Le dépôt versionne deux configurations de lancement dans `.run/` : IntelliJ les détecte
+automatiquement à l'ouverture du projet (menu déroulant des Run/Debug Configurations).
+
+**Prérequis** : SDK de projet sur **JDK 25** (`File → Project Structure → Project SDK`) et
+**Docker** démarré (le mode dev provisionne PostgreSQL + Keycloak via les DevServices Vidocq).
+
+1. **`Arago Dev (vidocq:dev)`** — config Maven qui lance le goal `vidocq:dev` sur
+   `arago-server/pom.xml`. Elle démarre l'app, provisionne PostgreSQL + Keycloak (realm `arago`
+   pré-importé), injecte les secrets de dev (superadmin `root` / `arago-dev`) et fork la JVM avec
+   un agent JDWP en écoute sur **`:5005`**. Lancer cette config (▶) suffit pour avoir l'appli sur
+   <http://localhost:8080/>.
+
+2. **`Attach Arago :5005`** — config *Remote JVM Debug* qui s'attache au process forké sur
+   `localhost:5005`. La lancer en mode Debug (🐞) une fois que `Arago Dev` tourne permet de poser
+   des breakpoints dans le code serveur. `AUTO_RESTART` est activé : l'attach se reconnecte tout
+   seul après un redémarrage du process dev.
+
+> Workflow type : ▶ `Arago Dev (vidocq:dev)`, attendre le démarrage, puis 🐞 `Attach Arago :5005`.
+> Pour recréer les configs à la main : *Maven Run* avec le goal `vidocq:dev` (working dir = racine
+> du projet, pom = `arago-server/pom.xml`) + une *Remote JVM Debug* `localhost:5005` (attach,
+> socket transport).
+
+#### Comptes de dev
+
+Le realm Keycloak `arago` (importé depuis `docker/keycloak/arago-realm.json` au démarrage du
+DevService) provisionne ces comptes. **Tous les users Keycloak ont le mot de passe `pw`.** Identique
+en `vidocq:dev` (IntelliJ) et via `docker-compose.localdev.yml`.
+
+| Rôle dans Arago | Login Keycloak | Mot de passe | Allowlist au boot |
+|---|---|---|---|
+| **Speaker — ADMIN** | `speakera` | `pw` | ✅ seedé `ADMIN` |
+| **Speaker — SPEAKER** | `speakerb` | `pw` | ✅ seedé `SPEAKER` |
+| Users génériques (16) | `ada`, `bob`, `carol`, `dave`, `erin`, `grace`, `heidi`, `ivan`, `judy`, `karl`, `leo`, `mona`, `nina`, `owen`, `rita`, `sam` | `pw` | ❌ non seedés |
+| **Superadmin** (break-glass) | `root` | `arago-dev` | n/a (console `/admin`, hors Keycloak) |
+
+- Emails Keycloak : `<login>@oidc.test` (ex. `speakera@oidc.test`).
+- **`speakera` / `speakerb`** sont auto-ajoutés à l'allowlist au boot (`arago.dev.seed-speaker`,
+  câblé dans la config du plugin `vidocq:dev`), donc leur login OIDC aboutit **sans invitation
+  manuelle**. `speakerA` est `ADMIN`, `speakerB` est `SPEAKER`.
+- Les **16 users génériques** existent dans Keycloak mais ne sont **pas** dans l'allowlist : leur
+  login renvoie « Compte non provisionné ». Parfaits pour tester le flux superadmin → inviter
+  (`POST /api/admin/speakers`, console `/admin` en `root` / `arago-dev`) → login.
+- Console admin Keycloak : <http://localhost:8081/> (`admin` / `admin`) **uniquement** avec
+  `docker-compose.localdev.yml` ; en `vidocq:dev`, le port Keycloak est aléatoire (voir
+  `target/vidocq-dev-services.properties` ou les logs `Keycloak dev service ready, issuer …`).
+
+> **Réservé au dev** : secrets de démonstration, realm en `redirectUris: ["*"]`, Keycloak en HTTP,
+> speakers seedés. Jamais en production (`arago.dev.seed-speaker` doit rester absent).
+
 ### Dev front avec hot-reload
 
 ```bash
