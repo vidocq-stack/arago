@@ -11,6 +11,11 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte()],
   base: '/',
+  // Vidocq version captured at build time (env VIDOCQ_VERSION, set by frontend-maven-plugin from the
+  // Maven property vidocq.runtime.version). Falls back to "dev" for a plain `npm run dev`.
+  define: {
+    __VIDOCQ_VERSION__: JSON.stringify(process.env.VIDOCQ_VERSION || 'dev'),
+  },
   build: {
     outDir: 'target/classes/static',
     emptyOutDir: true,

@@ -250,7 +250,7 @@
                          default dev DB to a FIXED host port (65123) so a committed IntelliJ datasource can
                          point at it. (For the DEFAULT datasource the key has no name segment; a named
                          datasource would use `vidocq.dev.postgres.<name>.port`.) -->
-                    <extraSystemProperties>vidocq.dev.postgres.port=65123,arago.superadmin.username=root,arago.superadmin.password-hash=$pbkdf2-sha256$i=600000$R8Y2xZt2A1l+AW/lPOmJVQ$F10mN4idJcNvNk+G7UGdD3oxdunzBGq9jy7XXn4OCtU,arago.attendee.hmac-secret=0123456789abcdef0123456789abcdef,arago.mail.dev-expose-link=true,arago.pins.preview.allow-private=true</extraSystemProperties>
+                    <extraSystemProperties>vidocq.dev.postgres.port=65123,arago.superadmin.username=root,arago.superadmin.password-hash=$pbkdf2-sha256$i=600000$R8Y2xZt2A1l+AW/lPOmJVQ$F10mN4idJcNvNk+G7UGdD3oxdunzBGq9jy7XXn4OCtU,arago.dev.superadmin.password=arago-dev,arago.attendee.hmac-secret=0123456789abcdef0123456789abcdef,arago.mail.dev-expose-link=true,arago.pins.preview.allow-private=true</extraSystemProperties>
                     <!-- Speaker seeding (local auth): speakerA → ADMIN, speakerB → SPEAKER, auto-provisioned
                          at boot with the initial password `pw` (arago.dev.seed-speaker.password) so the
                          local login works without a manual invite. The value carries a comma to separate the

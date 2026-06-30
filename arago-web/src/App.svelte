@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import Prefs from './lib/Prefs.svelte';
+  import Footer from './lib/Footer.svelte';
   import { t } from './lib/i18n.svelte.js';
   import { generate as qrGenerate, toSvg as qrToSvg } from './lib/qrcode.js';
 
@@ -557,6 +558,7 @@
   <footer>
     <a href="/privacy.html">{t('footer.privacy')}</a>
   </footer>
+  <Footer />
 </main>
 
 <style>

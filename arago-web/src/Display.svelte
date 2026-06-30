@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import Footer from './lib/Footer.svelte';
   import { t, applyLang } from './lib/i18n.svelte.js';
 
   // Public projector / lobby screen (arago-spec §4.1): no auth, opened from the speaker console
@@ -49,6 +50,7 @@
       <span class="count-label">{t('display.attendees')}</span>
     </p>
   {/if}
+  <Footer />
 </main>
 
 <style>

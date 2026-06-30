@@ -8,6 +8,7 @@
     return m ? qrToSvg(m, { size: 150 }) : null;
   }
   import Prefs from './lib/Prefs.svelte';
+  import Footer from './lib/Footer.svelte';
   import { loadSpeakerSession, saveSpeakerSession, clearSpeakerSession, loginSpeaker }
     from './lib/speakerSession.svelte.js';
   // Speaker console (arago-spec §9). Local email+password login, "my rooms" list + create, and per
@@ -876,6 +877,8 @@
       </button>
     </div>
   {/if}
+
+  <Footer />
 </main>
 
 <style>

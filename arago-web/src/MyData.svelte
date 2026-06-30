@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import Prefs from './lib/Prefs.svelte';
+  import Footer from './lib/Footer.svelte';
   // RGPD "my data" page (arago-spec §4.7). Landing of the magic link: ?token= is the credential
   // (aud=arago-profile, short-lived). Reads the attendee's profile + persistent messages, lets them
   // export (JSON) or erase everything. No password, ever — the token is the only auth.
@@ -91,6 +92,7 @@
   {/if}
 
   <footer><a href="/privacy.html">Confidentialité</a></footer>
+  <Footer />
 </main>
 
 <style>

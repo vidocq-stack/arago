@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import Prefs from './lib/Prefs.svelte';
+  import Footer from './lib/Footer.svelte';
   // Superadmin console (arago-spec §4.8). Logs in via POST /api/admin/login, then manages speaker
   // accounts (email + role + password). The superadmin token rides the X-Arago-Admin header (a
   // distinct header from the speakers' Authorization: Bearer). The token is kept in sessionStorage:
@@ -194,6 +195,7 @@
       </table>
     </section>
   {/if}
+  <Footer />
 </main>
 
 <style>
