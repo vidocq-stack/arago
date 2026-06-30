@@ -2,6 +2,7 @@ package io.vidocq.tools.arago.rest;
 
 import io.vidocq.tools.arago.persistence.Pin;
 import io.vidocq.tools.arago.persistence.PinRepository;
+import io.vidocq.tools.arago.persistence.Role;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomRepository;
 import io.vidocq.tools.arago.persistence.Speaker;
@@ -47,13 +48,15 @@ public class PinResource {
     @DELETE
     @Path("/{pinId}")
     public Response delete(@PathParam("pinId") String pinId) {
-        String ownerSub = requireProvisionedSpeaker();
+        Speaker caller = requireProvisionedSpeaker();
         Pin pin = pinRepo.findById(pinId).orElse(null);
         if (pin == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         Room room = rooms.findById(pin.getRoomId()).orElse(null);
-        if (room == null || !ownerSub.equals(room.getOwnerSub())) {
+        boolean allowed = room != null
+                && (caller.getRole() == Role.ADMIN || caller.getId().equals(room.getOwnerSub()));
+        if (!allowed) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         pinRepo.deleteById(pinId);
@@ -61,9 +64,8 @@ public class PinResource {
         return Response.noContent().build();
     }
 
-    private String requireProvisionedSpeaker() {
+    private Speaker requireProvisionedSpeaker() {
         return speakerAuth.authenticate(httpHeaders.getHeaderString(HttpHeaders.AUTHORIZATION))
-                .map(Speaker::getId)
                 .orElseThrow(() -> new WebApplicationException(Response.Status.UNAUTHORIZED));
     }
 }

@@ -13,6 +13,7 @@ import io.vidocq.tools.arago.persistence.HelpStatus;
 import io.vidocq.tools.arago.persistence.Pin;
 import io.vidocq.tools.arago.persistence.PinRepository;
 import io.vidocq.tools.arago.persistence.PinType;
+import io.vidocq.tools.arago.persistence.Role;
 import io.vidocq.tools.arago.persistence.Room;
 import io.vidocq.tools.arago.persistence.RoomMode;
 import io.vidocq.tools.arago.persistence.RoomManager;
@@ -129,6 +130,9 @@ public class RoomResource {
     @Inject
     SpeakerRepository speakers;
 
+    /** The authenticated speaker for this request, resolved by {@link #requireProvisionedSpeaker()}. */
+    private Speaker caller;
+
     /** Max upload size (5 MiB) — images/QR/small files; the rest is rejected with 413. */
     private static final int MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -158,6 +162,16 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listMine() {
         String ownerSub = requireProvisionedSpeaker();
+        // An ADMIN speaker oversees every room (§4.8): list them all, flagged owned/not, most recent first.
+        if (callerIsAdmin()) {
+            try (var all = rooms.findAll()) {
+                List<RoomView> views = all
+                        .sorted(java.util.Comparator.comparing(Room::getCreatedAt).reversed())
+                        .map(r -> RoomView.of(r, ownerSub.equals(r.getOwnerSub()), ownerName(r)))
+                        .toList();
+                return Response.ok(views).build();
+            }
+        }
         java.util.LinkedHashMap<String, RoomView> byId = new java.util.LinkedHashMap<>();
         // Owned rooms first (most recent first).
         for (Room r : rooms.findByOwnerSubOrderByCreatedAtDesc(ownerSub)) {
@@ -200,7 +214,7 @@ public class RoomResource {
     public Response end(@PathParam("id") String id) {
         String ownerSub = requireProvisionedSpeaker();
         return rooms.findById(id).map(room -> {
-            if (!ownerSub.equals(room.getOwnerSub())) {
+            if (!callerIsAdmin() && !ownerSub.equals(room.getOwnerSub())) {
                 return Response.status(Response.Status.FORBIDDEN).build();
             }
             if (room.getStatus() != RoomStatus.ENDED) {
@@ -228,8 +242,8 @@ public class RoomResource {
         String ownerSub = requireProvisionedSpeaker();
         Room room = rooms.findById(id)
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
-        if (!ownerSub.equals(room.getOwnerSub())) {
-            throw new WebApplicationException(Response.Status.FORBIDDEN); // delete is primary-admin only
+        if (!callerIsAdmin() && !ownerSub.equals(room.getOwnerSub())) {
+            throw new WebApplicationException(Response.Status.FORBIDDEN); // owner or ADMIN speaker only
         }
         for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(id)) {
             messages.deleteById(m.getId());
@@ -320,7 +334,7 @@ public class RoomResource {
     private Room ownerRoomOrAbort(String id, String sub) {
         Room room = rooms.findById(id)
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
-        if (!sub.equals(room.getOwnerSub())) {
+        if (!callerIsAdmin() && !sub.equals(room.getOwnerSub())) {
             throw new WebApplicationException(Response.Status.FORBIDDEN);
         }
         return room;
@@ -910,7 +924,7 @@ public class RoomResource {
     Room manageableRoomOrAbort(String id, String sub) {
         Room room = rooms.findById(id)
                 .orElseThrow(() -> new WebApplicationException(Response.Status.NOT_FOUND));
-        if (sub.equals(room.getOwnerSub()) || isCoManager(id, sub)) {
+        if (callerIsAdmin() || sub.equals(room.getOwnerSub()) || isCoManager(id, sub)) {
             return room;
         }
         throw new WebApplicationException(Response.Status.FORBIDDEN);
@@ -936,8 +950,17 @@ public class RoomResource {
      * speaker is unknown/disabled.
      */
     private String requireProvisionedSpeaker() {
-        return speakerAuth.authenticate(httpHeaders.getHeaderString(HttpHeaders.AUTHORIZATION))
-                .map(Speaker::getId)
+        caller = speakerAuth.authenticate(httpHeaders.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .orElseThrow(() -> new WebApplicationException(Response.Status.UNAUTHORIZED));
+        return caller.getId();
+    }
+
+    /**
+     * Whether the authenticated caller is an {@code ADMIN} speaker (§4.8): an admin sees every room and
+     * may moderate / force-close any of them, not just the ones they own or co-manage. Valid only after
+     * {@link #requireProvisionedSpeaker()} has run in the same request.
+     */
+    private boolean callerIsAdmin() {
+        return caller != null && caller.getRole() == Role.ADMIN;
     }
 }

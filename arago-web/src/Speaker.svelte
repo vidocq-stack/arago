@@ -22,6 +22,9 @@
   let authError = $state('');
   let loginEmail = $state('');
   let loginPassword = $state('');
+  // ADMIN speakers oversee every room (§4.8): the backend lists all rooms and lets them moderate /
+  // force-close any of them; the console exposes the same controls on rooms they don't own.
+  const isAdmin = $derived(me?.role === 'ADMIN');
 
   // --- rooms ---
   let rooms = $state([]);
@@ -607,7 +610,7 @@
 
     {#if !room}
       <section class="card">
-        <h2>Mes rooms</h2>
+        <h2>{isAdmin ? 'Toutes les rooms' : 'Mes rooms'}</h2>
         {#if rooms.length}
           <ul class="rooms">
             {#each rooms as r (r.id)}
@@ -616,7 +619,7 @@
                 <span class="meta">{r.mode} · {r.status} · PIN {r.pin}</span>
                 {#if !r.owned}<span class="meta owner" data-testid="room-owner">par {r.ownerName}</span>{/if}
                 <button type="button" class="ghost" data-testid="display-room" onclick={() => openDisplay(r)}>Afficher</button>
-                {#if r.owned}
+                {#if r.owned || isAdmin}
                   <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
                   <button type="button" class="ghost danger" data-testid="delete-room" onclick={() => deleteRoom(r)}>Supprimer</button>
                 {/if}
