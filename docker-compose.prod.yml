@@ -1,0 +1,84 @@
+# Production / staging stack for arago.vidocq.io (Portainer FUX).
+#
+# Modèle calqué sur le sibling `forge-dashboard` : l'image est tirée du registry CI
+# (registry.vidocq.dev), aucun port n'est publié sur l'hôte, et le conteneur rejoint le
+# réseau externe partagé du reverse-proxy (`reverseproxy_default`). Nginx Proxy Manager y
+# forward `arago.vidocq.io` -> `arago:8080` (HTTP + WebSocket pour /ws/rooms/{pin}).
+#
+# PostgreSQL vit sur un réseau interne privé (`arago-net`), jamais exposé au proxy ni à l'hôte.
+#
+# TOUS les secrets sont injectés par les variables d'environnement du stack Portainer
+# (onglet Environment), jamais écrits dans ce fichier — il est donc committable tel quel.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: arago-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-arago}
+      POSTGRES_USER: ${POSTGRES_USER:-arago}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - arago-pgdata:/var/lib/postgresql/data
+    networks:
+      - arago-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arago} -d ${POSTGRES_DB:-arago}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  arago:
+    image: ${DOCKER_REG_URL:-registry.vidocq.dev}/vidocq-tools/arago:${ARAGO_IMAGE_TAG:-0.1.0-SNAPSHOT}
+    container_name: arago
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # --- Datasource (MP Config : vidocq.pool.* <- VIDOCQ_POOL_*) ---
+      VIDOCQ_POOL_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-arago}
+      VIDOCQ_POOL_USERNAME: ${POSTGRES_USER:-arago}
+      VIDOCQ_POOL_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+
+      # --- Public URL (liens magiques RGPD, partage de room) ---
+      ARAGO_PUBLIC_URL: ${ARAGO_PUBLIC_URL:-https://arago.vidocq.io}
+
+      # --- Secrets de signature & superadmin (générés hors-bande, jamais en clair ici) ---
+      ARAGO_ATTENDEE_HMAC_SECRET: ${ARAGO_ATTENDEE_HMAC_SECRET:?set ARAGO_ATTENDEE_HMAC_SECRET}
+      ARAGO_SUPERADMIN_USERNAME: ${ARAGO_SUPERADMIN_USERNAME:-root}
+      ARAGO_SUPERADMIN_PASSWORD_HASH: ${ARAGO_SUPERADMIN_PASSWORD_HASH:?set ARAGO_SUPERADMIN_PASSWORD_HASH}
+
+      # --- Phase de test : pas de SMTP câblé (LoggingMailer). Exposer le lien magique dans la
+      #     réponse POST /api/profile/magic-link permet d'exercer le flux RGPD sans serveur mail.
+      #     Passer à "false" dès qu'un SmtpMailer est en place. ---
+      ARAGO_MAIL_DEV_EXPOSE_LINK: ${ARAGO_MAIL_DEV_EXPOSE_LINK:-true}
+
+      # --- Optionnel : provisionner des speakers au boot (phase de test). Vide => aucun seed,
+      #     les comptes se créent depuis la console superadmin. ---
+      ARAGO_DEV_SEED_SPEAKER: ${ARAGO_DEV_SEED_SPEAKER:-}
+      ARAGO_DEV_SEED_SPEAKER_PASSWORD: ${ARAGO_DEV_SEED_SPEAKER_PASSWORD:-}
+    expose:
+      - "8080"
+    networks:
+      - arago-net
+      - proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+networks:
+  # Réseau privé Arago <-> PostgreSQL (interne, non routé vers le proxy/hôte).
+  arago-net:
+    driver: bridge
+    internal: true
+  # Réseau partagé du reverse-proxy (NPM). NPM forward vers arago:8080.
+  proxy:
+    external: true
+    name: reverseproxy_default
+
+volumes:
+  arago-pgdata:
