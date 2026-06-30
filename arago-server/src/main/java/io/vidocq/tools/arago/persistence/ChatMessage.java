@@ -36,6 +36,13 @@ public class ChatMessage {
     @Column(name = "from_speaker", nullable = false)
     private boolean fromSpeaker;
 
+    /**
+     * Owner of the private (DM) thread — the attendee pseudo this message belongs to; {@code null} for a
+     * normal global room message. A DM is delivered to that attendee plus every speaker of the room (§4.3).
+     */
+    @Column(name = "dm_attendee")
+    private String dmAttendee;
+
     @Column(nullable = false)
     private boolean persistent;
 
@@ -94,6 +101,8 @@ public class ChatMessage {
     public void    setAuthorPseudo(String p)     { this.authorPseudo = p; }
     public boolean isFromSpeaker()               { return fromSpeaker;  }
     public void    setFromSpeaker(boolean f)     { this.fromSpeaker = f; }
+    public String  getDmAttendee()               { return dmAttendee;   }
+    public void    setDmAttendee(String a)       { this.dmAttendee = a; }
     public boolean isPersistent()                { return persistent;   }
     public void    setPersistent(boolean p)      { this.persistent = p; }
     public String  getBody()                     { return body;         }

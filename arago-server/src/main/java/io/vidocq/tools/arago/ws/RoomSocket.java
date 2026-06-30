@@ -186,9 +186,15 @@ public class RoomSocket implements WebSocketHandler {
         }
         broadcast(room.getId(), presenceEvent("join", pseudo, role));
 
-        // Replay the room history (oldest first) to the freshly joined client.
+        // Replay the room history (oldest first) to the freshly joined client. Global messages go to
+        // everyone; private (DM) messages only to a speaker (sees every thread) or the owning attendee.
+        boolean isSpeaker = ws.attribute("speaker") != null;
         for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(room.getId())) {
-            trySend(ws, render(m));
+            if (m.getDmAttendee() == null) {
+                trySend(ws, render(m));
+            } else if (isSpeaker || m.getDmAttendee().equals(pseudo)) {
+                trySend(ws, renderDm(m));
+            }
         }
         // Replay the current pins (display order) so a joining client sees pinned content (§4.4).
         for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(room.getId())) {
@@ -229,6 +235,7 @@ public class RoomSocket implements WebSocketHandler {
             case "seat-release" -> releaseSeat(roomId, pseudo);
             case "rename" -> renameAttendee(ws, roomId, pseudo, json);
             case "reveal.state" -> revealState(ws, roomId, json);
+            case "dm" -> handleDm(ws, roomId, pseudo, json);
             default -> handleChat(ws, roomId, pseudo, json);
         }
     }
@@ -274,6 +281,58 @@ public class RoomSocket implements WebSocketHandler {
         msg.setAttachmentKind(attachmentKind);
         msg.setAttachmentName(attachmentName);
         broadcast(roomId, render(messages.save(msg)));
+    }
+
+    /**
+     * Private message (DM, §4.3) — a shared speaker inbox. An attendee writes to "the speakers" (the thread
+     * is keyed by their own pseudo); a speaker replies into a given attendee's thread (frame field {@code to}).
+     * Persisted (survives the ephemeral purge; removed when the room is deleted) and delivered only to that
+     * attendee plus every speaker of the room.
+     */
+    private void handleDm(WebSocket ws, String roomId, String pseudo, JsonObject json) {
+        boolean fromSpeaker = ws.attribute("speaker") != null;
+        String dmAttendee = fromSpeaker ? json.getString("to", "").trim() : pseudo;
+        if (dmAttendee == null || dmAttendee.isBlank()) {
+            return; // a speaker must target an attendee thread
+        }
+        // A muted attendee cannot DM either (§7); speakers are never muted.
+        Set<String> muted = mutedByRoom.get(roomId);
+        if (!fromSpeaker && muted != null && muted.contains(pseudo)) {
+            trySend(ws, moderationEvent("muted", pseudo));
+            return;
+        }
+        String profileId = (String) ws.attribute("profileId");
+        String body = json.getString("body", "");
+        String attachmentId = emptyToNull(json.getString("attachmentId", null));
+        String attachmentKind = emptyToNull(json.getString("attachmentKind", null));
+        String attachmentName = emptyToNull(json.getString("attachmentName", null));
+        if (body.isBlank() && attachmentId == null) {
+            return;
+        }
+        if (body.length() > MAX_BODY) {
+            body = body.substring(0, MAX_BODY);
+        }
+        // persistent=true keeps the DM out of the daily ephemeral purge; it is removed with the room.
+        ChatMessage msg = new ChatMessage(UUID.randomUUID().toString(), roomId, profileId,
+                pseudo, fromSpeaker, true, body, Instant.now(), null, true);
+        msg.setAttachmentId(attachmentId);
+        msg.setAttachmentKind(attachmentKind);
+        msg.setAttachmentName(attachmentName);
+        msg.setDmAttendee(dmAttendee);
+        sendDm(roomId, dmAttendee, renderDm(messages.save(msg)));
+    }
+
+    /** Delivers a DM payload to the owning attendee's sockets plus every speaker of the room. */
+    public void sendDm(String roomId, String dmAttendee, String payload) {
+        Set<WebSocket> set = peers.get(roomId);
+        if (set == null) {
+            return;
+        }
+        for (WebSocket ws : set) {
+            if (dmAttendee.equals(ws.attribute("pseudo")) || ws.attribute("speaker") != null) {
+                trySend(ws, payload);
+            }
+        }
     }
 
     private static String emptyToNull(String s) {
@@ -471,6 +530,15 @@ public class RoomSocket implements WebSocketHandler {
                 h.setAttendeePseudo(newPseudo);
                 broadcast(roomId, helpEvent(helpRepo.save(h)));
             }
+        }
+        // Re-key the attendee's private (DM) thread + their own DM authorship so a reload stays consistent;
+        // the rename frame below makes clients move the thread/tab from old to new.
+        for (ChatMessage m : messages.findByRoomIdAndDmAttendeeOrderByAtAsc(roomId, oldPseudo)) {
+            m.setDmAttendee(newPseudo);
+            if (!m.isFromSpeaker() && oldPseudo.equals(m.getAuthorPseudo())) {
+                m.setAuthorPseudo(newPseudo);
+            }
+            messages.save(m);
         }
         broadcast(roomId, renameEvent(oldPseudo, newPseudo));
         // Keep the presence lists in sync with the new handle (§17.6).
@@ -838,6 +906,25 @@ public class RoomSocket implements WebSocketHandler {
                 .add("persistent", m.isPersistent())
                 .add("body", m.getBody())
                 .add("at", m.getAt().toString());
+        addAttachment(b, m);
+        return b.build().toString();
+    }
+
+    /** Renders a DM frame ({@code {"type":"dm","attendee":…,…}}); {@code attendee} identifies the thread. */
+    private static String renderDm(ChatMessage m) {
+        var b = Json.createObjectBuilder()
+                .add("type", "dm")
+                .add("attendee", m.getDmAttendee())
+                .add("id", m.getId())
+                .add("author", m.getAuthorPseudo())
+                .add("fromSpeaker", m.isFromSpeaker())
+                .add("body", m.getBody())
+                .add("at", m.getAt().toString());
+        addAttachment(b, m);
+        return b.build().toString();
+    }
+
+    private static void addAttachment(jakarta.json.JsonObjectBuilder b, ChatMessage m) {
         if (m.getAttachmentId() != null) {
             b.add("attachmentId", m.getAttachmentId());
             b.add("attachmentKind", m.getAttachmentKind() == null ? "file" : m.getAttachmentKind());
@@ -845,7 +932,6 @@ public class RoomSocket implements WebSocketHandler {
                 b.add("attachmentName", m.getAttachmentName());
             }
         }
-        return b.build().toString();
     }
 
     private static Duration ephemeralRetention() {

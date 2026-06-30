@@ -30,6 +30,21 @@ public final class Exports {
         return sb.toString();
     }
 
+    /** Renders one private (DM) thread as a Markdown document (the attendee + one bullet per message). */
+    public static String dmMarkdown(String title, String pin, String attendee, List<ChatMessage> messages) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ").append(title == null ? "Room" : title)
+                .append(" — DM avec ").append(attendee)
+                .append(" (PIN ").append(pin).append(")\n\n");
+        for (ChatMessage m : messages) {
+            String who = m.isFromSpeaker() ? "★ " + m.getAuthorPseudo() : m.getAuthorPseudo();
+            sb.append("- **").append(who).append("** _(").append(m.getAt()).append(")_");
+            String body = m.getBody() == null ? "" : m.getBody().replace("\r", " ").replace("\n", " ");
+            sb.append(" : ").append(body).append('\n');
+        }
+        return sb.toString();
+    }
+
     /** Renders the help requests as CSV (header + one row each). */
     public static String helpCsv(List<HelpRequest> helps) {
         StringBuilder sb = new StringBuilder("id,attendee,position,status,createdAt,updatedAt,message\n");

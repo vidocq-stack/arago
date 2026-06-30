@@ -75,7 +75,11 @@
   let revealFollow = $state(null);    // "H.V" current slide when the speaker drives a reveal deck (§4.6)
 
   // --- chat (§4.3): all room peers exchange messages over the same WebSocket. ---
-  let chat = $state([]);              // [{id, author, body, fromSpeaker, mine}]
+  let chat = $state([]);              // [{id, author, body, fromSpeaker, mine}] — global room chat
+  let dm = $state([]);                // private thread with the speakers (DM, §4.3)
+  let chatMode = $state('global');    // 'global' | 'dm' — which thread the attendee is viewing/sending to
+  let dmUnread = $state(0);           // unread DM count while viewing the global tab
+  const attMessages = $derived(chatMode === 'dm' ? dm : chat);
   let chatInput = $state('');
   let chatBox = $state(null);         // scroll container ref (auto-scroll to newest)
 
@@ -152,6 +156,7 @@
       case 'help': onHelp(m); break;
       case 'reveal.state': revealFollow = `${m.indexh}.${m.indexv}`; break;
       case 'chat': onChat(m); break;
+      case 'dm': onDm(m); break;
       case 'pin': onPin(m); break;
       case 'rename': onRename(m); break;
     }
@@ -208,11 +213,32 @@
     }].slice(-200); // keep the tail bounded for a long-running room
   }
 
+  // Private thread with the speakers. The attendee starts it by sending the first DM; replies come back
+  // on the same thread (m.attendee === myPseudo, enforced server-side).
+  function onDm(m) {
+    dm = [...dm, {
+      id: m.id || `${Date.now()}-${dm.length}`,
+      author: m.author || '?',
+      body: m.body || '',
+      fromSpeaker: !!m.fromSpeaker,
+      mine: !m.fromSpeaker,
+      attachmentId: m.attachmentId || null,
+      attachmentKind: m.attachmentKind || null,
+      attachmentName: m.attachmentName || null,
+    }].slice(-200);
+    if (chatMode !== 'dm') dmUnread += 1;
+  }
+
+  function setChatMode(mode) {
+    chatMode = mode;
+    if (mode === 'dm') dmUnread = 0;
+  }
+
   function sendChat(e) {
     e?.preventDefault();
     const body = chatInput.trim();
     if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ body }));
+    ws.send(JSON.stringify(chatMode === 'dm' ? { type: 'dm', body } : { body }));
     chatInput = '';
   }
 
@@ -231,17 +257,19 @@
       if (!res.ok) { notice = 'chat.upload-failed'; return; }
       const a = await res.json();
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
+        const frame = {
           body: chatInput.trim(), attachmentId: a.id, attachmentKind: a.kind, attachmentName: a.filename,
-        }));
+        };
+        if (chatMode === 'dm') frame.type = 'dm';
+        ws.send(JSON.stringify(frame));
         chatInput = '';
       }
     } catch { notice = 'chat.upload-failed'; }
   }
 
-  // Auto-scroll the chat to the newest message whenever the list grows.
+  // Auto-scroll the chat to the newest message whenever the active list grows (global or DM).
   $effect(() => {
-    chat.length;
+    chatMode; attMessages.length;
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
   });
 
@@ -522,9 +550,18 @@
         {/if}
 
         <div class="chat-col">
-          <h2 class="chat-title">{t('chat.title')}</h2>
+          <div class="chat-tabs" role="tablist">
+            <button type="button" class="chat-tab" class:active={chatMode === 'global'}
+                    role="tab" aria-selected={chatMode === 'global'}
+                    data-testid="chat-tab-global" onclick={() => setChatMode('global')}>{t('chat.title')}</button>
+            <button type="button" class="chat-tab" class:active={chatMode === 'dm'}
+                    role="tab" aria-selected={chatMode === 'dm'}
+                    data-testid="chat-tab-dm" onclick={() => setChatMode('dm')}>
+              {t('chat.dm')}{#if dmUnread} <span class="badge">{dmUnread}</span>{/if}
+            </button>
+          </div>
           <ul class="msgs" data-testid="chat-messages" bind:this={chatBox}>
-            {#each chat as m (m.id)}
+            {#each attMessages as m (m.id)}
               <li class="msg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
                 <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
                 {#if m.body}<span class="text">{m.body}</span>{/if}
@@ -540,14 +577,17 @@
                 {/if}
               </li>
             {/each}
-            {#if !chat.length}<li class="empty hint">{t('chat.empty')}</li>{/if}
+            {#if !attMessages.length}
+              <li class="empty hint">{chatMode === 'dm' ? t('chat.dm-empty') : t('chat.empty')}</li>
+            {/if}
           </ul>
           <form class="chat-form" onsubmit={sendChat}>
             <label class="attach-btn" title={t('chat.attach')} aria-label={t('chat.attach')}>📎
               <input type="file" data-testid="chat-file" onchange={pickChatFile} hidden />
             </label>
             <input data-testid="chat-input" autocomplete="off" maxlength="500"
-                   placeholder={t('chat.placeholder')} bind:value={chatInput} />
+                   placeholder={chatMode === 'dm' ? t('chat.dm-placeholder') : t('chat.placeholder')}
+                   bind:value={chatInput} />
             <button type="submit" data-testid="chat-send" disabled={!chatInput.trim()}>{t('chat.send')}</button>
           </form>
         </div>
@@ -686,6 +726,17 @@
 
   .chat-col { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
   .chat-title { margin: 0; font-size: 1rem; color: var(--arago-bordeaux); }
+  .chat-tabs { display: flex; gap: 0.4rem; }
+  .chat-tab {
+    font: inherit; font-size: 0.85rem; font-weight: 700; padding: 0.3rem 0.8rem; cursor: pointer;
+    border: 1px solid var(--arago-bordeaux); border-radius: 999px; background: transparent;
+    color: var(--arago-bordeaux);
+  }
+  .chat-tab.active { background: var(--arago-bordeaux); color: var(--arago-cream); }
+  .chat-tab .badge {
+    display: inline-block; min-width: 1.1rem; padding: 0 0.25rem; border-radius: 999px;
+    background: var(--arago-gold); color: var(--arago-ink); font-size: 0.7rem; text-align: center;
+  }
   .msgs {
     list-style: none; margin: 0; padding: 0.6rem;
     display: flex; flex-direction: column; gap: 0.4rem;

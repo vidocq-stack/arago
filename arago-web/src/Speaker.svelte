@@ -52,7 +52,13 @@
   let revealInfo = $state(null);     // { secret, pin } after enabling reveal
   let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
   let stats = $state(null);          // { messages, persistentMessages, helpTotal, helpResolved, attendees }
-  let chatLog = $state([]);          // [{id, author, body, fromSpeaker}] live + replayed chat
+  let chatLog = $state([]);          // [{id, author, body, fromSpeaker}] live + replayed GLOBAL chat
+  // Private messages (DM) — shared speaker inbox. dms[attendeePseudo] = thread; one tab per attendee.
+  let dms = $state({});              // { attendeePseudo: [ {id, author, body, fromSpeaker, …} ] }
+  let openTabs = $state([]);         // attendee pseudos currently shown as tabs (closable)
+  let dmUnread = $state({});         // attendeePseudo -> unread count (cleared when its tab is active)
+  let activeTab = $state('global');  // 'global' or an attendee pseudo
+  const activeMessages = $derived(activeTab === 'global' ? chatLog : (dms[activeTab] || []));
   let chatInput = $state('');
   let chatBox = $state(null);        // chat scroll container ref
   let managersList = $state([]);     // co-speakers of the open room (owner view)
@@ -205,8 +211,12 @@
     layout = r.layout || null;
     seats = {}; helps = []; pins = []; muted = {}; attendeesPresent = {}; speakersPresent = {};
     revealInfo = null; revealState = null; stats = null; chatLog = []; chatInput = '';
+    dms = {}; openTabs = []; dmUnread = {}; activeTab = 'global';
     managersList = []; invitePseudo = '';
-    const tk = await fetch(`/api/rooms/${r.id}/observer-token?name=${encodeURIComponent(speakerPseudo())}`,
+    // Only override the author name when the speaker actually chose a pseudo; otherwise let the server
+    // resolve it (pseudo › display name › email local part), never the bland "speaker".
+    const nameQ = (me && me.pseudo) ? `?name=${encodeURIComponent(me.pseudo)}` : '';
+    const tk = await fetch(`/api/rooms/${r.id}/observer-token${nameQ}`,
       { method: 'POST', headers: authHeaders() });
     if (!tk.ok) { roomError = 'Connexion à la room impossible.'; return; }
     const { token: obsToken, pin } = await tk.json();
@@ -238,6 +248,7 @@
       case 'help': onHelp(m); break;
       case 'pin': onPin(m); break;
       case 'chat': onChat(m); break;
+      case 'dm': onDm(m); break;
       case 'presence': onPresence(m); break;
       case 'rename': onRename(m); break;
       case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
@@ -285,6 +296,41 @@
     if (attendeesPresent[m.old]) { const a = { ...attendeesPresent }; delete a[m.old]; a[m.new] = true; attendeesPresent = a; }
     if (speakersPresent[m.old]) { const s = { ...speakersPresent }; delete s[m.old]; s[m.new] = true; speakersPresent = s; }
     if (muted[m.old]) { const mu = { ...muted }; delete mu[m.old]; mu[m.new] = true; muted = mu; }
+    // Re-key the attendee's DM thread/tab/unread + relabel their authored DM lines.
+    if (dms[m.old]) {
+      const d = { ...dms }; d[m.new] = (d[m.old] || []).map((c) => c.fromSpeaker ? c : { ...c, author: m.new });
+      delete d[m.old]; dms = d;
+    }
+    if (openTabs.includes(m.old)) openTabs = openTabs.map((t) => t === m.old ? m.new : t);
+    if (dmUnread[m.old]) { const u = { ...dmUnread }; u[m.new] = u[m.old]; delete u[m.old]; dmUnread = u; }
+    if (activeTab === m.old) activeTab = m.new;
+  }
+
+  // ---------- private messages (DM) ----------
+  function onDm(m) {
+    const a = m.attendee;
+    if (!a) return;
+    const entry = {
+      id: m.id || `${Date.now()}-${(dms[a] || []).length}`,
+      author: m.author || '?', body: m.body || '', fromSpeaker: !!m.fromSpeaker, mine: !!m.fromSpeaker,
+      attachmentId: m.attachmentId || null, attachmentKind: m.attachmentKind || null,
+      attachmentName: m.attachmentName || null,
+    };
+    dms = { ...dms, [a]: [ ...(dms[a] || []), entry ].slice(-200) };
+    if (!openTabs.includes(a)) openTabs = [...openTabs, a];
+    if (activeTab !== a) dmUnread = { ...dmUnread, [a]: (dmUnread[a] || 0) + 1 };
+  }
+
+  function selectTab(t) {
+    activeTab = t;
+    if (t !== 'global' && dmUnread[t]) { const u = { ...dmUnread }; delete u[t]; dmUnread = u; }
+  }
+
+  // Close a DM tab (UI only; the thread persists server-side and re-opens on a new message).
+  function closeTab(t) {
+    openTabs = openTabs.filter((x) => x !== t);
+    if (dmUnread[t]) { const u = { ...dmUnread }; delete u[t]; dmUnread = u; }
+    if (activeTab === t) activeTab = 'global';
   }
 
   function onPin(m) {
@@ -312,7 +358,9 @@
     e?.preventDefault();
     const body = chatInput.trim();
     if (!body || !ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ body }));
+    // Reply into the active thread: global chat, or a private DM to the selected attendee.
+    if (activeTab === 'global') ws.send(JSON.stringify({ body }));
+    else ws.send(JSON.stringify({ type: 'dm', to: activeTab, body }));
     chatInput = '';
   }
 
@@ -329,16 +377,18 @@
       if (!res.ok) { roomError = 'Envoi du fichier impossible.'; return; }
       const a = await res.json();
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
+        const frame = {
           body: chatInput.trim(), attachmentId: a.id, attachmentKind: a.kind, attachmentName: a.filename,
-        }));
+        };
+        if (activeTab !== 'global') { frame.type = 'dm'; frame.to = activeTab; }
+        ws.send(JSON.stringify(frame));
         chatInput = '';
       }
     } catch { roomError = 'Envoi du fichier impossible.'; }
   }
 
   $effect(() => {
-    chatLog.length;
+    activeTab; activeMessages.length;
     if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
   });
 
@@ -651,6 +701,7 @@
         <div class="bar">
           <strong>{room.title}</strong>
           <span class="meta">{room.mode} · PIN {room.pin}</span>
+          <button type="button" class="ghost" data-testid="display-room-open" onclick={() => openDisplay(room)}>Afficher</button>
           <button type="button" class="ghost" data-testid="back-rooms" onclick={closeRoom}>← Mes rooms</button>
         </div>
 
@@ -735,8 +786,24 @@
 
         <div class="panel">
           <h2>Chat</h2>
+          <div class="chat-tabs" role="tablist" data-testid="chat-tabs">
+            <button type="button" class="chat-tab" class:active={activeTab === 'global'}
+                    role="tab" aria-selected={activeTab === 'global'}
+                    data-testid="chat-tab-global" onclick={() => selectTab('global')}>Global</button>
+            {#each openTabs as a (a)}
+              <span class="chat-tab-wrap">
+                <button type="button" class="chat-tab" class:active={activeTab === a}
+                        role="tab" aria-selected={activeTab === a}
+                        data-testid="chat-tab" onclick={() => selectTab(a)}>
+                  {a}{#if dmUnread[a]} <span class="badge">{dmUnread[a]}</span>{/if}
+                </button>
+                <button type="button" class="chat-tab-close" title="Fermer" aria-label="Fermer l'onglet"
+                        data-testid="chat-tab-close" onclick={() => closeTab(a)}>×</button>
+              </span>
+            {/each}
+          </div>
           <ul class="chat-msgs" data-testid="speaker-chat" bind:this={chatBox}>
-            {#each chatLog as m (m.id)}
+            {#each activeMessages as m (m.id)}
               <li class="cmsg" class:mine={m.mine} class:from-speaker={m.fromSpeaker}>
                 <span class="who">{m.fromSpeaker ? '★ ' : ''}{m.author}</span>
                 {#if m.body}<span class="text">{m.body}</span>{/if}
@@ -752,14 +819,23 @@
                 {/if}
               </li>
             {/each}
-            {#if !chatLog.length}<li class="hint empty">Aucun message pour l'instant.</li>{/if}
+            {#if !activeMessages.length}
+              <li class="hint empty">{activeTab === 'global' ? "Aucun message pour l'instant." : 'Aucun message privé.'}</li>
+            {/if}
           </ul>
+          {#if activeTab !== 'global'}
+            <p class="dm-hint">Message privé avec <strong>{activeTab}</strong>
+              <button type="button" class="link" data-testid="dm-export"
+                      onclick={() => download(`/api/rooms/${room.id}/dm/${encodeURIComponent(activeTab)}/export.md`, `dm-${room.pin}-${activeTab}.md`)}>exporter (.md)</button>
+            </p>
+          {/if}
           <form class="chat-form" onsubmit={sendChat}>
             <label class="attach-btn" title="Joindre un fichier" aria-label="Joindre un fichier">📎
               <input type="file" data-testid="speaker-chat-file" onchange={pickChatFile} hidden />
             </label>
             <input data-testid="speaker-chat-input" autocomplete="off" maxlength="500"
-                   placeholder="Message au public…" bind:value={chatInput} />
+                   placeholder={activeTab === 'global' ? 'Message au public…' : `Réponse privée à ${activeTab}…`}
+                   bind:value={chatInput} />
             <button type="submit" data-testid="speaker-chat-send" disabled={!chatInput.trim()}>Envoyer</button>
           </form>
         </div>
@@ -919,6 +995,25 @@
   .cmsg .who { font-size: 0.68rem; font-weight: 700; opacity: 0.85; }
   .cmsg .text { white-space: pre-wrap; word-break: break-word; }
   .chat-msgs .empty { background: none; align-self: center; }
+  /* DM tabs: horizontal, scrollable on narrow screens. */
+  .chat-tabs { display: flex; gap: 0.3rem; margin-bottom: 0.4rem; overflow-x: auto; padding-bottom: 0.2rem; }
+  .chat-tab-wrap { display: inline-flex; align-items: stretch; flex-shrink: 0; }
+  .chat-tab {
+    flex-shrink: 0; font: inherit; font-size: 0.78rem; padding: 0.25rem 0.6rem; cursor: pointer;
+    border: 1px solid var(--arago-bordeaux); border-radius: 999px; background: transparent;
+    color: var(--arago-bordeaux); white-space: nowrap;
+  }
+  .chat-tab.active { background: var(--arago-bordeaux); color: var(--arago-cream); }
+  .chat-tab .badge {
+    display: inline-block; min-width: 1.1rem; padding: 0 0.25rem; border-radius: 999px;
+    background: var(--arago-gold); color: var(--arago-ink); font-size: 0.65rem; font-weight: 700; text-align: center;
+  }
+  .chat-tab-close {
+    flex-shrink: 0; font: inherit; cursor: pointer; border: none; background: none;
+    color: var(--arago-muted); padding: 0 0.25rem; font-size: 0.95rem; line-height: 1;
+  }
+  .dm-hint { margin: 0 0 0.4rem; font-size: 0.78rem; color: var(--arago-muted); }
+  .dm-hint .link { font: inherit; background: none; border: none; color: var(--arago-bordeaux); cursor: pointer; text-decoration: underline; padding: 0; }
   .chat-form { display: flex; gap: 0.5rem; align-items: center; }
   .chat-form > input { flex: 1; min-width: 0; }
   .speaker-name { font-size: 0.8rem; display: flex; gap: 0.3rem; align-items: center; }
@@ -972,4 +1067,21 @@
   .seat.help { fill: var(--arago-gold); stroke: var(--arago-bordeaux); stroke-width: 2; }
   footer { margin-top: auto; text-align: center; font-size: 0.85rem; }
   footer a { color: var(--arago-bordeaux); }
+
+  /* Tablet (iPad) — slightly tighter gutters. */
+  @media (max-width: 1024px) {
+    main { max-width: 100%; padding: 1.5rem 1rem; }
+  }
+  /* Phone — compact: smaller title/padding, full-width controls, taller chat. */
+  @media (max-width: 640px) {
+    main { padding: 1rem 0.75rem; gap: 0.9rem; }
+    h1 { font-size: 1.8rem; }
+    .bar { gap: 0.5rem; }
+    .bar > button, .chat-form > button { padding: 0.5rem 0.7rem; }
+    .chat-msgs { height: clamp(12rem, 50vh, 26rem); }
+    .new-speaker { flex-direction: column; align-items: stretch; }
+    .pin-add { flex-wrap: wrap; }
+    /* Comfortable touch targets. */
+    button, .chat-tab, .attach-btn { min-height: 40px; }
+  }
 </style>

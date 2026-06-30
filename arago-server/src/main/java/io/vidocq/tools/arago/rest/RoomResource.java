@@ -429,6 +429,44 @@ public class RoomResource {
     public record LobbyView(String title, String pin, String mode, String status, int attendees) {}
 
     /**
+     * Public projection feed (cf. §4.1): the last global chat messages (auto-scrolled on the projector)
+     * and the room's pins, so the display screen can show them. No authentication (PIN-keyed, read-only).
+     * Excludes private (DM) messages and SECRET pins — both are never shown on the public screen.
+     */
+    @GET
+    @Path("/lobby/{pin}/feed")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response lobbyFeed(@PathParam("pin") String pin) {
+        Room room = rooms.findByPin(pin == null ? "" : pin.trim()).orElse(null);
+        if (room == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        java.util.List<FeedMsg> chat = new java.util.ArrayList<>();
+        for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(room.getId())) {
+            if (m.getDmAttendee() == null) {
+                chat.add(new FeedMsg(m.getId(), m.getAuthorPseudo(), m.isFromSpeaker(), m.getBody(),
+                        m.getAt().toString()));
+            }
+        }
+        if (chat.size() > 50) {
+            chat = chat.subList(chat.size() - 50, chat.size());
+        }
+        java.util.List<FeedPin> pins = new java.util.ArrayList<>();
+        for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(room.getId())) {
+            if (p.getType() != PinType.SECRET) {
+                pins.add(new FeedPin(p.getId(), p.getType().name(), p.getContent(),
+                        p.getPreviewTitle(), p.getPreviewImage()));
+            }
+        }
+        return Response.ok(new FeedView(room.getTitle(), room.getStatus().name(), chat, pins)).build();
+    }
+
+    /** Projection feed: recent global chat + pins (no DM, no SECRET pin). */
+    public record FeedView(String title, String status, java.util.List<FeedMsg> chat, java.util.List<FeedPin> pins) {}
+    public record FeedMsg(String id, String author, boolean fromSpeaker, String body, String at) {}
+    public record FeedPin(String id, String type, String content, String previewTitle, String previewImage) {}
+
+    /**
      * Uploads a chat/pin attachment (cf. arago-spec §4.3/§4.4) stored as a PostgreSQL blob. Authorized as
      * a room participant: an attendee/observer token for this room ({@code ?token=}) or the owning
      * speaker's Bearer. Body = raw bytes; {@code kind} = {@code image} (served inline, no SVG) or
@@ -805,13 +843,28 @@ public class RoomResource {
     public Response observerToken(@PathParam("id") String id, @QueryParam("name") String name) {
         String ownerSub = requireProvisionedSpeaker();
         Room room = manageableRoomOrAbort(id, ownerSub);
-        // The display name the speaker's chat appears under (default "speaker"); capped, never blank.
-        String pseudo = (name == null || name.isBlank()) ? RoomSocket.OBSERVER_PSEUDO : name.trim();
+        // The display name the speaker's chat appears under: an explicit non-blank ?name= overrides,
+        // otherwise resolve it server-side from the authenticated speaker (pseudo › display name › email
+        // local part) — never the bland "speaker" placeholder.
+        String pseudo = (name != null && !name.isBlank()) ? name.trim() : speakerAuthorName(caller);
         if (pseudo.length() > 40) {
             pseudo = pseudo.substring(0, 40);
         }
         String token = attendeeTokens.issue(room.getId(), pseudo, null, true);
         return Response.ok(new ObserverToken(token, room.getPin())).build();
+    }
+
+    /** A speaker's chat author name: pseudo, else display name, else the email local part. */
+    private static String speakerAuthorName(Speaker s) {
+        if (s.getPseudo() != null && !s.getPseudo().isBlank()) {
+            return s.getPseudo();
+        }
+        if (s.getDisplayName() != null && !s.getDisplayName().isBlank()) {
+            return s.getDisplayName();
+        }
+        String email = s.getEmail();
+        int at = email == null ? -1 : email.indexOf('@');
+        return at > 0 ? email.substring(0, at) : (email == null ? RoomSocket.OBSERVER_PSEUDO : email);
     }
 
     /** Observer token + room PIN for the speaker console's live WebSocket. */
@@ -897,6 +950,42 @@ public class RoomResource {
                 .header("Content-Disposition", "attachment; filename=\"chat-" + room.getPin() + ".md\"")
                 .build();
     }
+
+    /**
+     * Private (DM) threads of a room — one entry per attendee, with the last message preview and count.
+     * Lets the speaker console populate its DM tabs on open. Any speaker/co-speaker/ADMIN may read (§4.3).
+     */
+    @GET
+    @Path("/{id}/dm")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listDms(@PathParam("id") String id) {
+        manageableRoomOrAbort(id, requireProvisionedSpeaker());
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        java.util.LinkedHashMap<String, DmThread> byAttendee = new java.util.LinkedHashMap<>();
+        for (ChatMessage m : messages.findByRoomIdAndDmAttendeeNotNullOrderByAtAsc(id)) {
+            String a = m.getDmAttendee();
+            counts.merge(a, 1, Integer::sum);
+            byAttendee.put(a, new DmThread(a, m.getBody(), m.getAt().toString(), counts.get(a)));
+        }
+        return Response.ok(List.copyOf(byAttendee.values())).build();
+    }
+
+    /** Exports one private (DM) thread as Markdown (owner/co-speaker/ADMIN only). */
+    @GET
+    @Path("/{id}/dm/{attendee}/export.md")
+    @Produces("text/markdown")
+    public Response exportDm(@PathParam("id") String id, @PathParam("attendee") String attendee) {
+        Room room = manageableRoomOrAbort(id, requireProvisionedSpeaker());
+        String md = Exports.dmMarkdown(room.getTitle(), room.getPin(), attendee,
+                messages.findByRoomIdAndDmAttendeeOrderByAtAsc(id, attendee));
+        String safe = attendee.replaceAll("[^A-Za-z0-9_.-]", "_");
+        return Response.ok(md)
+                .header("Content-Disposition", "attachment; filename=\"dm-" + room.getPin() + "-" + safe + ".md\"")
+                .build();
+    }
+
+    /** A DM thread summary for the speaker console: the attendee, last message preview + time, count. */
+    public record DmThread(String attendee, String lastBody, String lastAt, int count) {}
 
     @GET
     @Path("/{id}/help/export.csv")

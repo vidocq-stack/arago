@@ -37,4 +37,10 @@ public interface ChatMessageRepository extends BasicRepository<ChatMessage, Stri
      * unique, so the old pseudo identifies exactly that speaker's messages across all rooms.
      */
     List<ChatMessage> findByAuthorPseudoAndFromSpeakerTrue(String authorPseudo);
+
+    /** One private (DM) thread: all messages of a room belonging to {@code dmAttendee}, oldest first. */
+    List<ChatMessage> findByRoomIdAndDmAttendeeOrderByAtAsc(String roomId, String dmAttendee);
+
+    /** Every private (DM) message of a room (any thread), oldest first — grouped per attendee in Java. */
+    List<ChatMessage> findByRoomIdAndDmAttendeeNotNullOrderByAtAsc(String roomId);
 }
