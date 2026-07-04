@@ -54,6 +54,12 @@ Le `…_PASSWORD_HASH` se calcule hors-bande (le mot de passe en clair ne quitte
 node -e 'const c=require("crypto");const pw=process.argv[1];const s=c.randomBytes(16);const h=c.pbkdf2Sync(Buffer.from(pw,"utf8"),s,600000,32,"sha256");const b=x=>Buffer.from(x).toString("base64").replace(/=+$/,"");console.log(`$pbkdf2-sha256$i=600000$${b(s)}$${b(h)}`)' 'MON_MOT_DE_PASSE'
 ```
 
+> ⚠️ **Échapper les `$` dans Portainer** : compose ré-interpole les valeurs des variables du stack.
+> Dans l'onglet *Environment* (ou via l'API), chaque `$` du hash PHC doit être doublé (`$$`),
+> sinon `$pbkdf2`, `$i`, le sel et le hash sont substitués par du vide et le login renvoie 401.
+> Constaté au premier déploiement (stack id=49, 2026-07-05). Les autres secrets (base64) ne
+> contiennent jamais de `$` et passent tels quels.
+
 ## Nginx Proxy Manager — proxy host
 
 Dans NPM → **Hosts → Proxy Hosts → Add Proxy Host** :
