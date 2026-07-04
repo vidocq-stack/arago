@@ -50,8 +50,8 @@
         </profile>
     </profiles>
 
-    <!-- SNAPSHOTs Vidocq upstream sont publiés sur le Central Portal Snapshots de Sonatype
-         (consommés en anonyme). vauban 0.1.0 est une release Maven Central (repo par défaut). -->
+    <!-- La stack Vidocq 0.2.0 est une release Maven Central (repo par défaut). Le repo
+         Central Portal Snapshots est conservé pour tester les SNAPSHOT upstream à venir. -->
     <repositories>
         <repository>
             <id>central-snapshots</id>
@@ -75,14 +75,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
 
-        <!-- Vidocq stack. vauban est épinglé à la release 0.1.0 (Maven Central) ;
-             les autres briques sont stabilisées plus tard, encore en SNAPSHOT. -->
-        <vauban.version>0.2.0-SNAPSHOT</vauban.version>
-        <vidocq.runtime.version>0.2.0-SNAPSHOT</vidocq.runtime.version>
-        <cassini.version>0.2.0-SNAPSHOT</cassini.version>
-        <chappe.version>0.2.0-SNAPSHOT</chappe.version>
-        <champollion.version>0.2.0-SNAPSHOT</champollion.version>
-        <mansart.version>0.2.0-SNAPSHOT</mansart.version>
+        <!-- Vidocq stack — release 0.2.0 (Maven Central). -->
+        <vauban.version>0.2.0</vauban.version>
+        <vidocq.runtime.version>0.2.0</vidocq.runtime.version>
+        <cassini.version>0.2.0</cassini.version>
+        <chappe.version>0.2.0</chappe.version>
+        <champollion.version>0.2.0</champollion.version>
+        <mansart.version>0.2.0</mansart.version>
 
         <!-- Jakarta / MicroProfile (API uniquement, runtime fourni par Vidocq) -->
         <jakarta.ws.rs.version>4.0.0</jakarta.ws.rs.version>

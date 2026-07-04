@@ -34,7 +34,7 @@ Dev front seul : `cd arago-web && npm install && npm run dev`.
 
 ## Stack imposée (arago-spec §5)
 
-Vidocq runtime, Vauban (CDI 4.1 build-time, **épinglé release 0.1.0**), Cassini (REST), Champollion
+Vidocq runtime, Vauban (CDI 4.1 build-time), Cassini (REST), Champollion
 (JSON-B — cible ; Yasson en transition Phase 0), Chappe (HTTP + WebSocket), Mansart (Jakarta Data,
 PostgreSQL), MP Config (ravel), MP Health (knock). **Pas de Spring/Quarkus/Helidon — Vidocq pur.**
 
