@@ -118,22 +118,57 @@
     }
   }
 
+  // --- resilience: proxies and conference Wi-Fi drop sockets; only a deliberate server close
+  //     (1008 = kicked, room ended, invalid token) sends the attendee back to the join screen.
+  let reconnectDelay = 1000;
+  let reconnectTimer = null;
+
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${proto}://${location.host}/ws/rooms/${pinDigits}?token=${encodeURIComponent(token)}`;
     const socket = new WebSocket(url);
+    socket.onopen = () => {
+      if (ws !== socket) return;
+      reconnectDelay = 1000;
+      if (notice === 'room.reconnecting') notice = '';
+    };
     socket.onmessage = (ev) => onFrame(ev.data);
-    socket.onclose = () => {
-      // Disconnected (kicked, room ended/deleted, or a dropped/closed socket): leave cleanly to the
-      // join screen rather than freezing on a dead room. A refresh reconnects via restoreSession().
-      if (ws === socket && view === 'room') {
+    socket.onclose = (ev) => {
+      if (ws !== socket || view !== 'room') return;
+      if (ev.code === 1008) {
+        // Policy violation: the server refused or evicted us — leave cleanly to the join screen.
         clearSession();
         ws = null;
         view = 'join';
         joinError = 'join.disconnected';
+        return;
       }
+      scheduleReconnect();
     };
     ws = socket;
+  }
+
+  /** Reconnects after a network/proxy drop, with exponential backoff. The server replays the full
+      room state on reconnect, so local state is reset first; the held seat is re-claimed if still free. */
+  function scheduleReconnect() {
+    ws = null;
+    notice = 'room.reconnecting';
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      if (view !== 'room' || !token) return;
+      const wantSeat = mySeat;
+      seats = {}; mySeat = null; myHelp = null; chat = []; dm = []; dmUnread = 0; pins = [];
+      connect();
+      if (wantSeat) {
+        setTimeout(() => {
+          if (!mySeat && geom && !isOccupied(wantSeat.row, wantSeat.block, wantSeat.seat)
+              && !isBlocked(wantSeat.row, wantSeat.block, wantSeat.seat)) {
+            claim(wantSeat.row, wantSeat.block, wantSeat.seat);
+          }
+        }, 900);
+      }
+      reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+    }, reconnectDelay);
   }
 
   /** Manual data refresh (SPA): reconnect the room socket so the server replays fresh state, without

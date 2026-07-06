@@ -232,10 +232,31 @@
     room = null;
   }
 
+  // Observer socket resilience: proxies and flaky networks drop idle sockets; without a reconnect
+  // the console silently freezes. Deliberate closes go through closeRoom() (which detaches ws first).
+  let obsRetryDelay = 1000;
+  let obsRetryTimer = null;
+
   function connect(pin, obsToken) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const sock = new WebSocket(`${proto}://${location.host}/ws/rooms/${pin}?token=${encodeURIComponent(obsToken)}`);
+    sock.onopen = () => { if (ws === sock) obsRetryDelay = 1000; };
     sock.onmessage = (ev) => onFrame(ev.data);
+    sock.onclose = (ev) => {
+      if (ws !== sock || !room) return;
+      ws = null;
+      if (ev.code === 1008) {
+        // The server evicted us (room ended/deleted): back to the room list, don't retry.
+        closeRoom();
+        loadRooms();
+        return;
+      }
+      // Re-open the room with backoff: fresh observer token + full state replay.
+      const r = room;
+      clearTimeout(obsRetryTimer);
+      obsRetryTimer = setTimeout(() => { if (room && room.id === r.id) openRoom(r); }, obsRetryDelay);
+      obsRetryDelay = Math.min(obsRetryDelay * 2, 15000);
+    };
     ws = sock;
   }
 

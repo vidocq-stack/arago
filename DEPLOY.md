@@ -80,6 +80,23 @@ Dans NPM → **Hosts → Proxy Hosts → Add Proxy Host** :
 > directement par DNS Docker. Le challenge Let's Encrypt HTTP-01 passe par la même chaîne que
 > les autres domaines `*.vidocq.io` déjà servis par cet NPM.
 
+### Timeouts WebSocket (déconnexions attendees)
+
+Nginx (donc NPM) coupe toute connexion **sans trafic pendant 60 s** (`proxy_read_timeout` par
+défaut). Constaté au premier test réel (2026-07-06) : les attendees d'une room silencieuse étaient
+déconnectés au bout d'une minute.
+
+Le serveur envoie désormais un **PING WebSocket toutes les 25 s** (`WsPingScheduler`, clé
+`arago.ws.ping-seconds`, `0` pour désactiver), ce qui maintient la connexion sous le défaut de 60 s,
+et les clients (attendee + console speaker) se **reconnectent automatiquement** avec backoff en cas
+de coupure réseau. Le défaut NPM suffit donc — mais par ceinture et bretelles, monter les timeouts
+du proxy host : onglet **Advanced** → *Custom Nginx Configuration* :
+
+```nginx
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+```
+
 ## Redéploiement continu
 
 La CI (`build-deploy.yml`) reconstruit et pousse l'image à chaque `main`, puis appelle un webhook

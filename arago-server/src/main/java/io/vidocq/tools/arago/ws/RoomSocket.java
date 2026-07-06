@@ -34,6 +34,7 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URLEncoder;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -616,6 +617,34 @@ public class RoomSocket implements WebSocketHandler {
                     String role = ws.attribute("speaker") != null ? "speaker" : "attendee";
                     broadcast(roomId, presenceEvent("leave", pseudo, role));
                 }
+            }
+        }
+    }
+
+    /**
+     * Sends a protocol PING (RFC 6455 §5.5.2) to every open socket of every room. Reverse proxies
+     * drop WebSockets idle beyond their read timeout (Nginx defaults to 60s), so a silent room must
+     * still carry traffic; browsers reply PONG automatically, refreshing both directions. Invoked
+     * periodically by {@link WsPingScheduler}.
+     */
+    void pingAll() {
+        for (Set<WebSocket> sockets : peers.values()) {
+            pingPeers(sockets);
+        }
+    }
+
+    /** Pings each socket, dropping those already closed or failing the write. Package-visible for tests. */
+    static void pingPeers(Set<WebSocket> sockets) {
+        for (WebSocket ws : sockets) {
+            if (!ws.isOpen()) {
+                sockets.remove(ws);
+                continue;
+            }
+            try {
+                ws.sendPing(ByteBuffer.allocate(0));
+            } catch (IOException e) {
+                LOG.log(System.Logger.Level.DEBUG, "keepalive ping failed; dropping peer", e);
+                sockets.remove(ws);
             }
         }
     }
