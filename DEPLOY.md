@@ -102,3 +102,16 @@ proxy_send_timeout 3600s;
 La CI (`build-deploy.yml`) reconstruit et pousse l'image à chaque `main`, puis appelle un webhook
 Portainer de redéploiement. Pour l'activer : récupérer l'URL du webhook du stack (Portainer →
 stack `arago` → *Webhooks*) et la mettre dans le secret Forgejo/Codeberg `PORTAINER_WEBHOOK_URL`.
+
+> ⚠️ **Le webhook meurt si la stack est recréée/rééditée** (constaté le 2026-07-05 : la recréation
+> pour le fix des `$$` a invalidé le GUID → étape CI « Trigger Portainer redeploy » en 404, alors
+> que l'image, elle, est bien poussée). Réparation par API, sans passer par l'UI :
+>
+> ```bash
+> # ré-attache un webhook (et redéploie avec pull forcé) — renvoyer compose + env tels quels
+> PUT $PORTAINER_URL/api/stacks/49?endpointId=2
+>   {StackFileContent, Env, Prune:false, PullImage:true, Webhook:"<uuid>"}
+> # puis mettre à jour le secret CI
+> PUT https://codeberg.org/api/v1/repos/VidocqTools/arago/actions/secrets/PORTAINER_WEBHOOK_URL
+>   {"data":"$PORTAINER_URL/api/stacks/webhooks/<uuid>"}
+> ```
