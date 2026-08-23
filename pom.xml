@@ -11,7 +11,7 @@
 
     <name>arago</name>
     <description>Arago — Speaker &amp; Lab Companion. Première application phare bâtie sur la stack Vidocq.</description>
-    <url>https://codeberg.org/VidocqTools/arago</url>
+    <url>https://codefloe.com/VidocqTools/arago</url>
 
     <licenses>
         <license>
@@ -28,9 +28,9 @@
     </developers>
 
     <scm>
-        <url>https://codeberg.org/VidocqTools/arago</url>
-        <connection>scm:git:https://codeberg.org/VidocqTools/arago.git</connection>
-        <developerConnection>scm:git:ssh://git@codeberg.org/VidocqTools/arago.git</developerConnection>
+        <url>https://codefloe.com/VidocqTools/arago</url>
+        <connection>scm:git:https://codefloe.com/VidocqTools/arago.git</connection>
+        <developerConnection>scm:git:ssh://git@codefloe.com/VidocqTools/arago.git</developerConnection>
     </scm>
 
     <modules>
