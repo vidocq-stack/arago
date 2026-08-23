@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    runs-on: docker
+    runs-on: vidocq-dind
     # Le label `docker` mappe par défaut sur `docker:dind` (alpine, sans Node).
     # On surcharge avec catthehacker/ubuntu:act-22.04 (Node 20 + Docker CLI + bash).
     # Le build front (frontend-maven-plugin) télécharge son propre Node — rien à installer ici.
