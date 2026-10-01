@@ -194,7 +194,18 @@
       case 'dm': onDm(m); break;
       case 'pin': onPin(m); break;
       case 'rename': onRename(m); break;
+      case 'room': onRoom(m); break;
     }
+  }
+
+  /** The speaker re-purposed the room for a new session (new format; chat, help and seats wiped):
+      adopt the new mode, drop all local state and reconnect for a fresh replay. */
+  function onRoom(m) {
+    if (m.action !== 'reset') return;
+    roomMode = m.mode || roomMode;
+    layout = null; mySeat = null; myHelp = null; dm = []; dmUnread = 0;
+    refreshRoom();
+    notice = 'room.reset';
   }
 
   function onRename(m) {
@@ -227,7 +238,7 @@
       pins = pins.filter((p) => p.id !== m.pin.id);
       return;
     }
-    if (m.action === 'add' && m.pin) {
+    if ((m.action === 'add' || m.action === 'update') && m.pin) {
       if (m.pin.pinType === 'SECRET') return; // secrets are never surfaced to attendees
       pins = [...pins.filter((p) => p.id !== m.pin.id), m.pin]
         .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));

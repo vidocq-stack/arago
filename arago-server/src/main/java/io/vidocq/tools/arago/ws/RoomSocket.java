@@ -704,6 +704,27 @@ public class RoomSocket implements WebSocketHandler {
         return distinct.size();
     }
 
+    /**
+     * Re-syncs a room whose format just changed for a new session (its chat, help and seats are already
+     * wiped): lifts the in-memory mutes/kicks of the previous session and tells every connected client to
+     * reset ({@link #roomResetEvent}) — they drop their local state and reconnect for a fresh replay.
+     */
+    public void resetRoom(Room room) {
+        mutedByRoom.remove(room.getId());
+        bannedByRoom.remove(room.getId());
+        broadcast(room.getId(), roomResetEvent(room));
+    }
+
+    /** Renders a room reset frame ({@code {"type":"room","action":"reset","title":…,"mode":…}}). */
+    public static String roomResetEvent(Room room) {
+        return Json.createObjectBuilder()
+                .add("type", "room")
+                .add("action", "reset")
+                .add("title", room.getTitle() == null ? "" : room.getTitle())
+                .add("mode", room.getMode() == null ? "" : room.getMode().name())
+                .build().toString();
+    }
+
     // --- Moderation (§7), invoked by the owner-speaker via RoomResource. State is in memory, per room. ---
 
     /** Mutes a pseudo: their further messages are dropped. Returns the number of their open sockets notified. */
@@ -813,7 +834,7 @@ public class RoomSocket implements WebSocketHandler {
                 .build().toString();
     }
 
-    /** Renders a pin add/remove WebSocket event ({@code {"type":"pin","action":...,"pin":{...}}}). */
+    /** Renders a pin add/update/remove WebSocket event ({@code {"type":"pin","action":...,"pin":{...}}}). */
     public static String pinEvent(String action, Pin p) {
         return Json.createObjectBuilder()
                 .add("type", "pin")

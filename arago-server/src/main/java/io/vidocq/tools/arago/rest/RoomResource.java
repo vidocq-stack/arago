@@ -36,6 +36,7 @@ import io.vidocq.tools.arago.rooms.JoinResponse;
 import io.vidocq.tools.arago.rooms.PinGenerator;
 import io.vidocq.tools.arago.rooms.PinView;
 import io.vidocq.tools.arago.rooms.RoomView;
+import io.vidocq.tools.arago.rooms.UpdatePinRequest;
 import io.vidocq.tools.arago.ws.RoomSocket;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -75,6 +76,8 @@ import java.util.UUID;
  *   <li>{@code GET  /api/rooms} — list the caller's rooms (most recent first);</li>
  *   <li>{@code GET  /api/rooms/{id}} — detail (owner only);</li>
  *   <li>{@code POST /api/rooms/{id}/end} — end the room (owner only);</li>
+ *   <li>{@code POST /api/rooms/{id}/duplicate} — new room from this one as a template (pins copied);</li>
+ *   <li>{@code PUT  /api/rooms/{id}/format} — new title/mode/layout on a clean slate (owner only);</li>
  *   <li>{@code GET  /api/rooms/count} — public counters (Phase 0, feeds the metrics gauge).</li>
  * </ul>
  *
@@ -141,21 +144,135 @@ public class RoomResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response create(CreateRoomRequest request) {
         String ownerSub = requireProvisionedSpeaker();
-        if (request == null || request.title() == null || request.title().isBlank()) {
+        RoomMode mode = validatedMode(request);
+        if (mode == null) {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }
-        RoomMode mode = request.mode() == null ? RoomMode.CONF : request.mode();
-        boolean needsLayout = mode == RoomMode.LAB || mode == RoomMode.HYBRID;
-        if (needsLayout && !isValidLayout(request.layout())) {
-            return Response.status(Response.Status.BAD_REQUEST).build(); // §4.5: LAB/HYBRID needs a BLOCKS layout
+        Room saved = rooms.save(newRoom(request, mode, ownerSub));
+        return Response.status(Response.Status.CREATED).entity(RoomView.of(saved)).build();
+    }
+
+    /**
+     * The mode of a create/format request (CONF by default), or {@code null} when the request is
+     * invalid: a blank title, or a LAB/HYBRID mode without a valid BLOCKS layout (§4.5).
+     */
+    private static RoomMode validatedMode(CreateRoomRequest request) {
+        if (request == null || request.title() == null || request.title().isBlank()) {
+            return null;
         }
+        RoomMode mode = request.mode() == null ? RoomMode.CONF : request.mode();
+        if (needsLayout(mode) && !isValidLayout(request.layout())) {
+            return null;
+        }
+        return mode;
+    }
+
+    private static boolean needsLayout(RoomMode mode) {
+        return mode == RoomMode.LAB || mode == RoomMode.HYBRID;
+    }
+
+    /** A fresh ACTIVE room (new id + access PIN) from an already validated request. */
+    private Room newRoom(CreateRoomRequest request, RoomMode mode, String ownerSub) {
         Room room = new Room(UUID.randomUUID().toString(), pins.next(), request.title().trim(),
                 RoomStatus.ACTIVE, mode, ownerSub, Instant.now());
-        if (needsLayout) {
+        if (needsLayout(mode)) {
             room.setLayoutJson(LayoutCodec.toJson(request.layout()));
         }
+        return room;
+    }
+
+    /**
+     * Duplicates a room as a template: a new ACTIVE room (fresh id + access PIN) owned by the caller,
+     * with the requested title/mode/layout and a copy of the source pins in display order. IMAGE/FILE
+     * pins get their attachment copied (skipped if it was already purged); chat, help requests, seats
+     * and co-speakers are not carried over. The source may be ACTIVE or ENDED (an ended room has
+     * already lost its SECRET pins). Owner, co-speaker or ADMIN of the source; {@code 400} on an
+     * invalid title/layout.
+     */
+    @POST
+    @Path("/{id}/duplicate")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response duplicate(@PathParam("id") String id, CreateRoomRequest request) {
+        String sub = requireProvisionedSpeaker();
+        Room source = manageableRoomOrAbort(id, sub);
+        RoomMode mode = validatedMode(request);
+        if (mode == null) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        Room copy = rooms.save(newRoom(request, mode, sub));
+        Instant now = Instant.now();
+        int order = 0;
+        for (Pin p : pinRepo.findByRoomIdOrderByOrderIndexAsc(source.getId())) {
+            String content = p.getContent();
+            if (p.getType() == PinType.IMAGE || p.getType() == PinType.FILE) {
+                content = copyAttachment(content, copy.getId(), now);
+                if (content == null) {
+                    continue; // attachment already purged — nothing left to pin
+                }
+            }
+            Pin pin = new Pin(UUID.randomUUID().toString(), copy.getId(), p.getType(), content,
+                    p.getLang(), order++, now);
+            pin.setPreviewTitle(p.getPreviewTitle());
+            pin.setPreviewImage(p.getPreviewImage());
+            pin.setPreviewDescription(p.getPreviewDescription());
+            pinRepo.save(pin);
+        }
+        return Response.status(Response.Status.CREATED).entity(RoomView.of(copy)).build();
+    }
+
+    /** Copies an attachment into {@code roomId} with a fresh retention window; its new id, or null if gone. */
+    private String copyAttachment(String attachmentId, String roomId, Instant now) {
+        return attachmentStore.load(attachmentId).map(a -> {
+            String newId = UUID.randomUUID().toString();
+            attachmentStore.save(newId, roomId, a.kind(), a.contentType(), a.filename(), a.data(),
+                    now, now.plus(attachmentRetention()));
+            return newId;
+        }).orElse(null);
+    }
+
+    /**
+     * Re-purposes an ACTIVE room for a new session (another talk in the same slot): new title, mode
+     * and layout on a clean slate — chat (global and DMs, with their attachments), help requests and
+     * seats are wiped, in-memory mutes/kicks are lifted. Pins, co-speakers and the access PIN are kept.
+     * Connected clients get a {@code room/reset} frame and re-sync. Owner or ADMIN; {@code 409} if the
+     * room is not ACTIVE (duplicate it instead), {@code 400} on an invalid title/layout.
+     */
+    @PUT
+    @Path("/{id}/format")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateFormat(@PathParam("id") String id, CreateRoomRequest request) {
+        String sub = requireProvisionedSpeaker();
+        Room room = ownerRoomOrAbort(id, sub);
+        if (room.getStatus() != RoomStatus.ACTIVE) {
+            return Response.status(Response.Status.CONFLICT).build();
+        }
+        RoomMode mode = validatedMode(request);
+        if (mode == null) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        room.setTitle(request.title().trim());
+        room.setMode(mode);
+        room.setLayoutJson(needsLayout(mode) ? LayoutCodec.toJson(request.layout()) : null);
         Room saved = rooms.save(room);
-        return Response.status(Response.Status.CREATED).entity(RoomView.of(saved)).build();
+        for (ChatMessage m : messages.findByRoomIdOrderByAtAsc(id)) {
+            messages.deleteById(m.getId());
+        }
+        for (HelpRequest h : helpRepo.findByRoomIdOrderByCreatedAtAsc(id)) {
+            helpRepo.deleteById(h.getId());
+        }
+        for (boolean released : new boolean[] {false, true}) {
+            for (Seat s : seatRepo.findByRoomIdAndReleased(id, released)) {
+                seatRepo.deleteById(s.getId());
+            }
+        }
+        // Chat attachments go with the chat; the ones still referenced by IMAGE/FILE pins stay.
+        attachmentStore.deleteByRoomExcept(id, pinRepo.findByRoomIdOrderByOrderIndexAsc(id).stream()
+                .filter(p -> p.getType() == PinType.IMAGE || p.getType() == PinType.FILE)
+                .map(Pin::getContent).toList());
+        roomSocket.resetRoom(saved);
+        return Response.ok(RoomView.of(saved, sub.equals(saved.getOwnerSub()), ownerName(saved))).build();
     }
 
     @GET
@@ -660,6 +777,46 @@ public class RoomResource {
 
     /** Reorder request body: pin ids in the desired display order. */
     public record ReorderRequest(java.util.List<String> ids) {}
+
+    /**
+     * Edits a pin in place (owner, co-speaker or ADMIN): new content (and {@code lang} for a CODE pin),
+     * same type and position. A URL pin gets its OpenGraph preview re-fetched. The change is broadcast
+     * as a {@code pin/update} frame. {@code 404} if the pin is not in this room, {@code 409} for an
+     * IMAGE/FILE pin (delete and re-upload instead), {@code 400} on blank content.
+     */
+    @PUT
+    @Path("/{id}/pins/{pinId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updatePin(@PathParam("id") String id, @PathParam("pinId") String pinId,
+                              UpdatePinRequest request) {
+        manageableRoomOrAbort(id, requireProvisionedSpeaker());
+        Pin pin = pinRepo.findById(pinId).filter(p -> id.equals(p.getRoomId())).orElse(null);
+        if (pin == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        if (pin.getType() == PinType.IMAGE || pin.getType() == PinType.FILE) {
+            return Response.status(Response.Status.CONFLICT).build();
+        }
+        if (request == null || request.content() == null || request.content().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        pin.setContent(request.content());
+        pin.setLang(pin.getType() == PinType.CODE ? request.lang() : null);
+        if (pin.getType() == PinType.URL) {
+            pin.setPreviewTitle(null);
+            pin.setPreviewImage(null);
+            pin.setPreviewDescription(null);
+            ogFetcher.fetch(request.content()).ifPresent(p -> {
+                pin.setPreviewTitle(p.title());
+                pin.setPreviewImage(p.image());
+                pin.setPreviewDescription(p.description());
+            });
+        }
+        Pin saved = pinRepo.save(pin);
+        roomSocket.broadcast(id, RoomSocket.pinEvent("update", saved));
+        return Response.ok(PinView.of(saved)).build();
+    }
 
     /**
      * Updates a LAB/HYBRID room's seating layout (owner only, §4.5) — pre-config or live. Re-validates,

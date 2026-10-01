@@ -33,6 +33,13 @@
   let newRows = $state(3);
   let newBlocks = $state('4+4');
   let roomError = $state('');
+  // A room as a template for a new session: change its format in place (wipes chat/help/seats) or
+  // duplicate it (pins copied, new access PIN). One inline form at a time, under the room's row.
+  let roomForm = $state(null);       // { kind: 'format' | 'duplicate', room } while the form is open
+  let formTitle = $state('');
+  let formMode = $state('CONF');
+  let formRows = $state(3);
+  let formBlocks = $state('4+4');
 
   // --- selected room (live) ---
   let room = $state(null);           // RoomView of the open room
@@ -48,6 +55,9 @@
   let newPinType = $state('TEXT');
   let newPinContent = $state('');
   let newPinFile = $state(null);     // selected file for an IMAGE/FILE pin
+  let editPinId = $state(null);      // pin being edited inline (not IMAGE/FILE: those are re-uploaded)
+  let editPinContent = $state('');
+  let editPinLang = $state('');
   let dragFrom = $state(null);
   let revealInfo = $state(null);     // { secret, pin } after enabling reveal
   let revealState = $state(null);    // "H.V" current slide, from reveal.state frames
@@ -159,10 +169,10 @@
     if (res.ok) rooms = await res.json();
   }
 
-  function buildLayout() {
-    const sizes = newBlocks.split('+').map((s) => parseInt(s.trim(), 10)).filter((n) => n > 0);
+  function buildLayout(rows, blocks) {
+    const sizes = blocks.split('+').map((s) => parseInt(s.trim(), 10)).filter((n) => n > 0);
     return {
-      rows: Number(newRows),
+      rows: Number(rows),
       blocks: sizes.map((size, i) => ({ size, label: String.fromCharCode(65 + i) })),
       stagePos: 'TOP', rowLabels: 'NUMERIC', blockedSeats: [],
     };
@@ -172,13 +182,44 @@
     e?.preventDefault();
     roomError = '';
     const body = { title: newTitle.trim(), mode: newMode };
-    if (newMode === 'LAB' || newMode === 'HYBRID') body.layout = buildLayout();
+    if (newMode === 'LAB' || newMode === 'HYBRID') body.layout = buildLayout(newRows, newBlocks);
     const res = await fetch('/api/rooms', {
       method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (res.ok) { newTitle = ''; await loadRooms(); }
     else roomError = 'Création impossible.';
+  }
+
+  /** Opens the inline format/duplicate form for a room, prefilled with its current title/mode/layout. */
+  function openRoomForm(kind, r) {
+    roomForm = { kind, room: r };
+    formTitle = r.title;
+    formMode = r.mode || 'CONF';
+    formRows = r.layout?.rows || 3;
+    formBlocks = r.layout?.blocks?.length ? r.layout.blocks.map((b) => b.size).join('+') : '4+4';
+    roomError = '';
+  }
+
+  async function submitRoomForm(e) {
+    e?.preventDefault();
+    if (!roomForm) return;
+    const { kind, room: r } = roomForm;
+    const body = { title: formTitle.trim(), mode: formMode };
+    if (formMode === 'LAB' || formMode === 'HYBRID') body.layout = buildLayout(formRows, formBlocks);
+    const res = await fetch(`/api/rooms/${r.id}/${kind}`, {
+      method: kind === 'format' ? 'PUT' : 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      roomError = kind === 'format' ? 'Changement de format impossible.' : 'Duplication impossible.';
+      return;
+    }
+    const saved = await res.json();
+    roomForm = null;
+    flash(kind === 'format' ? 'Format appliqué : la room repart de zéro.' : `Room dupliquée (PIN ${saved.pin}).`);
+    await loadRooms();
   }
 
   async function endRoom(id) {
@@ -273,8 +314,18 @@
       case 'presence': onPresence(m); break;
       case 'rename': onRename(m); break;
       case 'reveal.state': revealState = `${m.indexh}.${m.indexv}`; break;
+      case 'room': if (m.action === 'reset') reopenRoom(); break;
       default: break;
     }
+  }
+
+  /** The room's format changed (new session, wiped chat/help/seats): re-open it from fresh REST state. */
+  async function reopenRoom() {
+    if (!room) return;
+    const res = await fetch(`/api/rooms/${room.id}`, { headers: authHeaders() });
+    if (!res.ok) return;
+    await openRoom(await res.json());
+    flash('Nouvelle session : la room a été réinitialisée.');
   }
 
   function onPresence(m) {
@@ -358,6 +409,7 @@
     if (m.action === 'reorder') return; // we drive reorder locally
     // WS frames carry the kind as `pinType`; REST (loadPins) as `type`. Normalise to `type`.
     if (m.action === 'add' && m.pin) pins = [...pins.filter((p) => p.id !== m.pin.id), { ...m.pin, type: m.pin.pinType }];
+    else if (m.action === 'update' && m.pin) pins = pins.map((p) => p.id === m.pin.id ? { ...m.pin, type: m.pin.pinType } : p);
     else if (m.action === 'remove' && m.pin) pins = pins.filter((p) => p.id !== m.pin.id);
   }
 
@@ -527,6 +579,26 @@
     if (res.ok) { newPinContent = ''; newPinFile = null; await loadPins(); }
   }
 
+  function startEditPin(p) {
+    editPinId = p.id;
+    editPinContent = p.content || '';
+    editPinLang = p.lang || '';
+  }
+
+  async function saveEditPin(e) {
+    e?.preventDefault();
+    const content = editPinContent.trim();
+    if (!content || !editPinId) return;
+    const res = await fetch(`/api/rooms/${room.id}/pins/${editPinId}`, {
+      method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, lang: editPinLang.trim() || null }),
+    });
+    if (!res.ok) { roomError = 'Modification du pin impossible.'; return; }
+    const saved = await res.json();
+    pins = pins.map((p) => p.id === saved.id ? { ...p, ...saved } : p);
+    editPinId = null;
+  }
+
   async function deletePin(id) {
     await fetch(`/api/pins/${id}`, { method: 'DELETE', headers: authHeaders() });
     pins = pins.filter((p) => p.id !== id);
@@ -690,9 +762,39 @@
                 <span class="meta">{r.mode} · {r.status} · PIN {r.pin}</span>
                 {#if !r.owned}<span class="meta owner" data-testid="room-owner">par {r.ownerName}</span>{/if}
                 <button type="button" class="ghost" data-testid="display-room" onclick={() => openDisplay(r)}>Afficher</button>
+                <button type="button" class="ghost" data-testid="duplicate-room" onclick={() => openRoomForm('duplicate', r)}>Dupliquer</button>
                 {#if r.owned || isAdmin}
+                  {#if r.status === 'ACTIVE'}
+                    <button type="button" class="ghost" data-testid="format-room" onclick={() => openRoomForm('format', r)}>Format</button>
+                  {/if}
                   <button type="button" class="ghost" data-testid="end-room" onclick={() => endRoom(r.id)}>Terminer</button>
                   <button type="button" class="ghost danger" data-testid="delete-room" onclick={() => deleteRoom(r)}>Supprimer</button>
+                {/if}
+                {#if roomForm && roomForm.room.id === r.id}
+                  <form class="room-form" data-testid="room-form" onsubmit={submitRoomForm}>
+                    <strong>{roomForm.kind === 'format' ? 'Changer le format' : 'Dupliquer la room'}</strong>
+                    <input data-testid="room-form-title" placeholder="Titre" bind:value={formTitle} />
+                    <select data-testid="room-form-mode" bind:value={formMode}>
+                      <option value="CONF">Conférence</option>
+                      <option value="LAB">Atelier (LAB)</option>
+                      <option value="HYBRID">Hybride</option>
+                    </select>
+                    {#if formMode !== 'CONF'}
+                      <label>Rangées <input data-testid="room-form-rows" type="number" min="1" bind:value={formRows} /></label>
+                      <label>Blocs (ex. 10+10+3) <input data-testid="room-form-blocks" bind:value={formBlocks} /></label>
+                    {/if}
+                    <p class="hint">
+                      {roomForm.kind === 'format'
+                        ? 'Le chat, les demandes d’aide et les places seront remis à zéro. Les pins et le PIN d’accès sont conservés.'
+                        : 'Les pins sont copiés dans une nouvelle room, avec un nouveau PIN d’accès.'}
+                    </p>
+                    <div class="form-actions">
+                      <button type="submit" data-testid="room-form-submit" disabled={!formTitle.trim()}>
+                        {roomForm.kind === 'format' ? 'Appliquer et réinitialiser' : 'Dupliquer'}
+                      </button>
+                      <button type="button" class="ghost" data-testid="room-form-cancel" onclick={() => (roomForm = null)}>Annuler</button>
+                    </div>
+                  </form>
                 {/if}
               </li>
             {/each}
@@ -787,9 +889,19 @@
           </form>
           <ul class="pins">
             {#each pins as p, i (p.id)}
-              <li data-testid="pin-item" draggable="true"
+              <li data-testid="pin-item" draggable={editPinId !== p.id}
                   ondragstart={() => onDragStart(i)} ondragover={(e) => e.preventDefault()} ondrop={() => onDrop(i)}>
-                {#if p.type === 'IMAGE'}
+                {#if editPinId === p.id}
+                  <form class="pin-edit" data-testid="pin-edit" onsubmit={saveEditPin}>
+                    <span class="meta">[{p.type}]</span>
+                    <textarea data-testid="pin-edit-content" rows="3" bind:value={editPinContent}></textarea>
+                    {#if p.type === 'CODE'}
+                      <input data-testid="pin-edit-lang" placeholder="langage" bind:value={editPinLang} />
+                    {/if}
+                    <button type="submit" data-testid="pin-edit-save" disabled={!editPinContent.trim()}>Enregistrer</button>
+                    <button type="button" class="ghost" data-testid="pin-edit-cancel" onclick={() => (editPinId = null)}>Annuler</button>
+                  </form>
+                {:else if p.type === 'IMAGE'}
                   <img class="pin-thumb" src={`/api/attachments/${p.content}`} alt="" />
                 {:else if p.type === 'FILE'}
                   <a href={`/api/attachments/${p.content}`} target="_blank" rel="noopener noreferrer">📎 fichier</a>
@@ -799,7 +911,13 @@
                 {:else}
                   <span>[{p.type}] {p.previewTitle || p.content}</span>
                 {/if}
-                <button type="button" class="ghost" data-testid="delete-pin" onclick={() => deletePin(p.id)}>×</button>
+                {#if editPinId !== p.id}
+                  {#if p.type !== 'IMAGE' && p.type !== 'FILE'}
+                    <button type="button" class="ghost" data-testid="edit-pin" title="Modifier" aria-label="Modifier le pin"
+                            onclick={() => startEditPin(p)}>✎</button>
+                  {/if}
+                  <button type="button" class="ghost" data-testid="delete-pin" onclick={() => deletePin(p.id)}>×</button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -1047,6 +1165,13 @@
   .cmsg .chat-img { max-width: 10rem; max-height: 10rem; border-radius: 0.35rem; display: block; margin-top: 0.2rem; }
   .cmsg .chat-file { color: inherit; text-decoration: underline; word-break: break-word; }
   .pin-add { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .pin-edit { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-start; flex: 1 1 100%; }
+  .pin-edit textarea { flex: 1 1 16rem; font: inherit; font-family: monospace; padding: 0.4rem 0.5rem;
+    border: 2px solid var(--arago-bordeaux); border-radius: 0.5rem; background: var(--arago-cream); color: var(--arago-ink); }
+  .pin-edit input { flex: 0 1 8rem; min-width: 0; }
+  .room-form { flex: 1 1 100%; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.8rem;
+    border: 1px dashed var(--arago-gold); border-radius: 0.6rem; background: rgba(255,255,255,0.35); }
+  .form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .pins li { cursor: grab; }
   .pin-thumb { width: 3rem; height: 3rem; object-fit: cover; border-radius: 0.3rem; }
   /* Ghost (outline) danger button: transparent bg so the red text stays readable (override button.danger). */

@@ -77,6 +77,26 @@ public class AttachmentStore {
         }
     }
 
+    /** Deletes a room's attachments except {@code keepIds} (e.g. those still referenced by pins). */
+    public int deleteByRoomExcept(String roomId, java.util.Collection<String> keepIds) {
+        if (keepIds.isEmpty()) {
+            return deleteByRoom(roomId);
+        }
+        String sql = "DELETE FROM attachments WHERE room_id = ? AND id NOT IN ("
+                + String.join(", ", java.util.Collections.nCopies(keepIds.size(), "?")) + ")";
+        try (Connection c = dataSource.get().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, roomId);
+            int i = 2;
+            for (String id : keepIds) {
+                ps.setString(i++, id);
+            }
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("attachment delete-by-room-except failed", e);
+        }
+    }
+
     /** Deletes attachments past their {@code purge_after} (RGPD retention); returns how many were removed. */
     public int deleteExpired(Instant now) {
         String sql = "DELETE FROM attachments WHERE purge_after IS NOT NULL AND purge_after < ?";
